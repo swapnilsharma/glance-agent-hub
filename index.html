@@ -1,0 +1,1309 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TV Prototype</title>
+<style>
+/* ============================================================
+   DESIGN TOKENS  — defined once, inherited verbatim (principle 30)
+   Dark theme only. Depth comes from luminance, not from lifting
+   blacks (principles 3, 28).
+   ============================================================ */
+:root{
+  /* Ink ramp — text/icon luminance steps on a black base */
+  --ink-0:#ffffff;           /* focus / primary — pure white, inherits nothing (principle 2) */
+  --ink-1:rgba(255,255,255,.86);
+  --ink-2:rgba(255,255,255,.60);
+  --ink-3:rgba(255,255,255,.38);
+  --ink-4:rgba(255,255,255,.16);
+
+  --bg:#000000;              /* true black — OLED-friendly */
+  --panel:rgba(255,255,255,.05);   /* glass fill */
+  --panel-2:rgba(255,255,255,.09);
+  --hairline:rgba(255,255,255,.12);
+
+  /* Focus — the cursor. Loudest thing on screen, always (principle 1,2) */
+  --focus-ring:0 0 0 4px #fff;
+  --focus-lift:0 22px 60px rgba(0,0,0,.55);
+
+  --shadow:0 12px 38px rgba(0,0,0,.5);
+  --radius:20px;          /* rounder, softer boxes */
+  --radius-lg:28px;
+  --radius-sm:14px;       /* chips, small buttons */
+
+  /* Motion */
+  --ease:cubic-bezier(.22,.61,.36,1);
+  --ease-out:cubic-bezier(.16,1,.3,1);
+  --dwell:420ms;            /* hero lag behind focus (principle 16: 350–500ms) */
+
+  /* Type — sans-serif, sized for 3m viewing */
+  --font:"Inter","Helvetica Neue",Arial,system-ui,-apple-system,sans-serif;
+
+  /* Overscan stage (principle 15) */
+  --stage-w:1920px;
+  --stage-h:1080px;
+  --safe-x:128px;
+  --safe-y:96px;
+
+  /* Vertical bands — fixed top + fixed height, never content-sized
+     (principle 12). Author screens by declaring bands here. */
+  --bar-top:var(--safe-y);
+  --bar-h:64px;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);overflow:hidden}
+body{font-family:var(--font);color:var(--ink-1);
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+
+/* ============================================================
+   OVERSCAN STAGE — fixed 1920×1080, scaled to viewport,
+   letterboxed on black. Nothing interactive leaves the safe area.
+   ============================================================ */
+#viewport{position:fixed;inset:0;background:#000;display:grid;place-items:center;overflow:hidden}
+#stage{position:relative;width:var(--stage-w);height:var(--stage-h);
+  transform-origin:center center;background:#000;overflow:hidden}
+
+/* Optional safe-area guide (toggle with the 'g' key) */
+#stage.show-safe::after{content:"";position:absolute;
+  top:var(--safe-y);left:var(--safe-x);right:var(--safe-x);bottom:var(--safe-y);
+  border:1px dashed rgba(255,80,80,.5);pointer-events:none;z-index:9999}
+
+/* ============================================================
+   HERO — two stacked layers, crossfade never through black
+   (principles 17). Static first frame; video is enhancement (27).
+   ============================================================ */
+.hero{position:absolute;inset:0;z-index:0}
+.hero__layer{position:absolute;inset:0;background-size:cover;background-position:center;
+  opacity:0;transition:opacity 640ms var(--ease)}
+.hero__layer.is-live{opacity:1}
+/* Scrim carries text contrast; art is never dimmed (principle 6) */
+.hero__scrim{position:absolute;inset:0;pointer-events:none;
+  background:
+    linear-gradient(90deg, rgba(0,0,0,.82) 0%, rgba(0,0,0,.45) 34%, rgba(0,0,0,0) 62%),
+    linear-gradient(0deg, rgba(0,0,0,.85) 0%, rgba(0,0,0,0) 40%);}
+.hero__lockup{position:absolute;left:var(--safe-x);bottom:340px;max-width:820px;z-index:2}
+.hero__eyebrow{font-size:20px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2);margin-bottom:14px}
+.hero__title{font-size:76px;line-height:1.02;font-weight:700;color:var(--ink-0);
+  /* clamp is a safety net, not the plan (principle 14) */
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.hero__meta{margin-top:18px;font-size:22px;color:var(--ink-2);max-width:680px;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.hero__actions{position:absolute;left:var(--safe-x);bottom:264px;display:flex;gap:16px;z-index:3}
+/* Hero action buttons hold position across content swaps (principle 10) */
+
+/* Dither noise for near-black gradients (principle 4) */
+.dither{position:absolute;inset:0;pointer-events:none;mix-blend-mode:overlay;opacity:.5;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/></filter><rect width='120' height='120' filter='url(%23n)' opacity='0.5'/></svg>")}
+
+/* ============================================================
+   TOP BAR — text tabs, never a labelled sidebar (principle 11)
+   ============================================================ */
+.bar{position:absolute;left:var(--safe-x);right:var(--safe-x);top:var(--bar-top);height:var(--bar-h);
+  display:flex;align-items:center;gap:34px;z-index:5}
+.bar__brand{font-weight:700;font-size:24px;letter-spacing:.02em;color:var(--ink-0);margin-right:14px}
+.tab{font-size:22px;color:var(--ink-2);padding:6px 4px;position:relative}
+
+/* ============================================================
+   SHELVES — bleed off the bottom edge as a "more content" cue
+   (principle 15). Header band is fixed; cards are a horizontal rail.
+   ============================================================ */
+.shelves{position:absolute;left:var(--safe-x);right:0;bottom:0;z-index:4}
+.shelf{margin-bottom:28px}
+.shelf__title{font-size:24px;color:var(--ink-1);margin:0 0 14px 2px;font-weight:600}
+.rail{display:flex;gap:20px;overflow:visible}
+.card{flex:0 0 auto;width:280px;height:158px;border-radius:var(--radius);
+  background:var(--panel);border:1px solid var(--hairline);overflow:hidden;position:relative;
+  background-size:cover;background-position:center;
+  transition:transform 180ms var(--ease-out), box-shadow 180ms var(--ease-out)}
+.card__label{position:absolute;left:14px;right:14px;bottom:12px;font-size:18px;color:var(--ink-0);
+  text-shadow:0 2px 10px rgba(0,0,0,.7);
+  display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+.chip{flex:0 0 auto;height:52px;padding:0 24px;border-radius:26px;
+  display:flex;align-items:center;font-size:20px;color:var(--ink-1);
+  background:var(--panel);border:1px solid var(--hairline);white-space:nowrap;
+  transition:transform 180ms var(--ease-out), box-shadow 180ms var(--ease-out)}
+
+/* ============================================================
+   BUTTONS
+   ============================================================ */
+.btn{height:64px;padding:0 32px;border-radius:var(--radius);border:1px solid var(--hairline);
+  background:var(--panel-2);color:var(--ink-0);font-family:var(--font);font-size:22px;font-weight:600;
+  display:inline-flex;align-items:center;gap:10px;cursor:default;
+  transition:transform 180ms var(--ease-out), box-shadow 180ms var(--ease-out)}
+.btn--solid{background:#fff;color:#000;border-color:#fff}
+
+/* ============================================================
+   FOCUS STATE — pure white, inherits nothing (principle 2).
+   The single loudest element on screen (principle 1).
+   ============================================================ */
+[data-focusable]{outline:none}
+.is-focused{box-shadow:var(--focus-ring),var(--focus-lift) !important;
+  transform:translateY(-4px) scale(1.03);z-index:20}
+.card.is-focused,.chip.is-focused{transform:translateY(-6px) scale(1.05)}
+/* Chrome (tabs) get a white fill on focus rather than a ring, so they
+   read over any backdrop (principle 2) */
+.tab.is-focused{color:#000;background:#fff;border-radius:12px;box-shadow:var(--focus-ring)}
+
+/* Edge-bounce nudge is applied inline by the engine via translate. */
+
+/* Sound / help affordance — bottom-right, low key */
+.hud{position:absolute;right:var(--safe-x);bottom:var(--safe-y);z-index:30;
+  display:flex;gap:12px;align-items:center;font-size:16px;color:var(--ink-3)}
+.hud .dot{width:8px;height:8px;border-radius:50%;background:var(--ink-2)}
+.hud.is-muted .dot{background:var(--ink-4)}
+
+/* ============================================================
+   SCREENS — one shared hero bed underneath, screens on z1.
+   Tokens above are inherited verbatim (principle 30).
+   ============================================================ */
+.screen{position:absolute;inset:0;z-index:1;display:none}
+.screen.is-active{display:block}
+.hero__layer{background-color:#0a0a0a}
+
+.hero__lockup{transition:opacity 300ms var(--ease)}
+.hero__lockup.is-hidden,.hero__actions.is-hidden{opacity:0;pointer-events:none}
+.hero__lockup.lk--compact{bottom:512px;max-width:900px}
+.hero__lockup.lk--compact .hero__title{font-size:46px;-webkit-line-clamp:2}
+.hero__lockup.lk--compact .hero__meta{font-size:21px;margin-top:14px}
+.hero__lockup.lk--det{bottom:376px}
+.hero__lockup.lk--cat{bottom:632px;max-width:800px}
+.hero__lockup.lk--cat .hero__title{font-size:44px;-webkit-line-clamp:2}
+.hero__lockup.lk--cat .hero__meta{font-size:20px;margin-top:12px;-webkit-line-clamp:2}
+.hero__actions.ac--compact{bottom:418px}
+.hero__actions.ac--det{bottom:300px}
+.hero__actions.ac--cat{bottom:556px;align-items:center}
+.btn--sm{height:52px;padding:0 24px;font-size:19px}
+.btn--ghost{background:transparent}
+.btn{border-radius:var(--radius-sm)}
+.acthint{font-size:18px;color:var(--ink-3);margin-left:8px}
+
+/* ============================================================
+   TILE SYSTEM — Metro-derived. One square unit; a tile is 1×1 or
+   2×1. Width encodes whether it has something live to say. Flat,
+   4px radius, content to the edge, art carries the colour (3).
+   ============================================================ */
+:root{ --u:186px; --gap:18px; }
+.tile{position:relative;overflow:hidden;border-radius:20px;
+  width:var(--u);height:var(--u);flex:0 0 auto;background:#0d0d0d;
+  transition:transform 180ms var(--ease-out),box-shadow 180ms var(--ease-out)}
+.tile--wide{width:calc(var(--u)*2 + var(--gap))}
+.tile.is-focused{transform:scale(1.045);z-index:20}
+.tile__art{position:absolute;inset:0;background-size:cover;background-position:center;
+  transition:transform 560ms var(--ease-out)}
+.tile.is-focused .tile__art{transform:scale(1.07)}
+.tile__scrim{position:absolute;inset:0;
+  background:linear-gradient(0deg,rgba(0,0,0,.93) 0%,rgba(0,0,0,.58) 46%,rgba(0,0,0,.18) 100%)}
+.tile__glyph{position:absolute;top:16px;left:18px;color:var(--ink-1);z-index:2}
+.tile__glyph svg{width:24px;height:24px;display:block}
+.tile.is-focused .tile__glyph{color:var(--ink-0)}
+.tile__live{position:absolute;top:19px;right:18px;width:10px;height:10px;border-radius:50%;
+  background:#fff;z-index:2;box-shadow:0 0 0 5px rgba(0,0,0,.4)}
+.tile__body{position:absolute;left:18px;right:18px;bottom:16px;z-index:2}
+.tile__name{font-size:21px;line-height:1.16;font-weight:600;color:var(--ink-0);
+  text-shadow:0 2px 12px rgba(0,0,0,.8);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.tile__state{margin-top:7px;font-size:17px;color:var(--ink-1);text-shadow:0 2px 10px rgba(0,0,0,.85);
+  display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+.tile__pinned{position:absolute;top:14px;right:14px;z-index:3;height:24px;padding:0 9px;border-radius:8px;
+  background:rgba(255,255,255,.94);color:#000;font-size:12px;letter-spacing:.1em;font-weight:700;
+  text-transform:uppercase;display:flex;align-items:center}
+.tile--add{background:transparent;box-shadow:inset 0 0 0 1px var(--ink-4)}
+.tile--add .tile__name{color:var(--ink-2);font-weight:500}
+.tile--add.is-focused .tile__name{color:var(--ink-0)}
+/* dev-only behaviour labels — toggled with 't', never product chrome */
+.kind{position:absolute;left:18px;top:52px;z-index:3;font-size:12px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink-1);background:rgba(0,0,0,.62);
+  padding:3px 7px;border-radius:8px;display:none}
+body.show-kinds .kind{display:block}
+
+/* ---------- AMBIENT / screensaver ---------- */
+.amb{position:absolute;left:var(--safe-x);bottom:var(--safe-y);z-index:2}
+.amb__time{font-size:132px;line-height:.9;font-weight:300;letter-spacing:-.03em;color:var(--ink-0);
+  font-variant-numeric:tabular-nums}
+.amb__date{margin-top:20px;font-size:26px;color:var(--ink-1)}
+.amb__note{margin-top:8px;font-size:21px;color:var(--ink-2)}
+/* Quiet, non-focusable affordance — just an arrow that breathes (never the
+   loudest thing on an idle screen). Same treatment reused inside the drawer. */
+.edgehint,.alledge{position:absolute;left:44px;top:50%;transform:translateY(-50%);
+  display:flex;flex-direction:column;align-items:center;gap:7px;z-index:3;
+  animation:edgePulse 3.4s ease-in-out infinite}
+.edgehint__chev{font-size:38px;line-height:.8;color:var(--ink-1)}
+.edgehint__label{font-size:14px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3)}
+@keyframes edgePulse{0%,100%{opacity:.5}50%{opacity:.92}}
+
+/* ---------- DRAWER: nav across the top, pin grid below ---------- */
+#drawer{position:absolute;inset:0;z-index:40;display:none}
+#drawer.is-open{display:block}
+.drawer__scrim{position:absolute;inset:0;
+  background:linear-gradient(90deg,rgba(0,0,0,.95) 0%,rgba(0,0,0,.9) 40%,rgba(0,0,0,.3) 68%,rgba(0,0,0,0) 86%);
+  opacity:0;transition:opacity 260ms var(--ease)}
+#drawer.is-in .drawer__scrim{opacity:1}
+.panel{position:absolute;left:var(--safe-x);top:var(--safe-y);bottom:var(--safe-y);
+  width:calc(var(--u)*3 + var(--gap)*2);display:flex;flex-direction:column;
+  opacity:0;transform:translateX(-26px);transition:opacity 260ms var(--ease),transform 320ms var(--ease-out)}
+#drawer.is-in .panel{opacity:1;transform:none}
+#drawer.is-out .panel{transform:translateX(-720px);opacity:0;
+  transition:transform 440ms var(--ease-out),opacity 340ms var(--ease)}
+#drawer.is-out .drawer__scrim{opacity:0;transition:opacity 380ms var(--ease)}
+.navrow{display:flex;align-items:center;gap:8px;height:52px;flex:0 0 auto}
+.nav{height:40px;padding:0 15px;border-radius:14px;display:flex;align-items:center;gap:9px;
+  font-size:19px;color:var(--ink-2);transition:transform 160ms var(--ease-out),box-shadow 160ms var(--ease-out)}
+.nav svg{width:19px;height:19px}
+.nav.is-focused{background:#fff;color:#000}
+.pincol{margin-top:26px;display:grid;grid-template-columns:repeat(3,var(--u));
+  gap:var(--gap);grid-auto-flow:row dense;align-content:start}
+.pincol .tile{width:auto}
+.pincol .tile--wide{grid-column:span 2}
+.pincol__label{grid-column:1/-1;font-size:15px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink-3);margin:0 0 -4px 1px}
+.tile--new{animation:tileIn 520ms var(--ease-out)}
+@keyframes tileIn{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:none}}
+.screen.slide-in{animation:slideOver 460ms var(--ease-out)}
+@keyframes slideOver{from{opacity:0;transform:translateX(140px)}to{opacity:1;transform:none}}
+
+/* ---------- STRIPS (result / info rails) ---------- */
+.strip{position:absolute;left:var(--safe-x);right:0;bottom:44px;z-index:2}
+.strip--agent{bottom:52px}
+.strip__title{font-size:21px;color:var(--ink-2);margin:0 0 14px 2px}
+.rail{gap:18px}
+.icard{flex:0 0 auto;width:250px;height:158px;border-radius:18px;background:#0d0d0d;position:relative;
+  overflow:hidden;padding:20px;display:flex;flex-direction:column;justify-content:flex-end;
+  transition:transform 180ms var(--ease-out),box-shadow 180ms var(--ease-out)}
+.icard.is-focused{transform:translateY(-6px) scale(1.04)}
+.icard__art{position:absolute;inset:0;background-size:cover;background-position:center;opacity:.34}
+.icard__veil{position:absolute;inset:0;background:linear-gradient(0deg,rgba(0,0,0,.88),rgba(0,0,0,.52))}
+.icard__label{position:absolute;top:18px;left:20px;font-size:13px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-3);z-index:1}
+.icard__value{font-size:32px;font-weight:600;color:var(--ink-0);line-height:1.05;z-index:1}
+.icard__sub{margin-top:7px;font-size:17px;color:var(--ink-2);z-index:1;
+  display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+.pcard{flex:0 0 auto;width:212px;border-radius:18px;overflow:hidden;position:relative;background:#0d0d0d;
+  transition:transform 180ms var(--ease-out),box-shadow 180ms var(--ease-out)}
+.pcard.is-focused{transform:translateY(-6px) scale(1.05)}
+.pcard__art{height:118px;background-size:cover;background-position:center;background-color:#111}
+.pcard__body{padding:12px 14px 14px}
+.pcard__name{font-size:17px;color:var(--ink-0);
+  display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+.pcard__meta{margin-top:5px;font-size:16px;color:var(--ink-2)}
+.pcard__meta b{color:var(--ink-0);font-weight:600}
+.pcard__tag{position:absolute;top:10px;left:10px;height:24px;padding:0 9px;border-radius:8px;
+  background:rgba(255,255,255,.92);color:#000;font-weight:700;letter-spacing:.08em;
+  display:flex;align-items:center;font-size:12px}
+.skel{flex:0 0 auto;width:212px;height:180px;border-radius:18px;background:var(--panel);
+  animation:pulse 1400ms ease-in-out infinite}
+.skel:nth-child(2){animation-delay:140ms}.skel:nth-child(3){animation-delay:280ms}
+.skel:nth-child(4){animation-delay:420ms}
+@keyframes pulse{0%,100%{opacity:.3}50%{opacity:.68}}
+
+/* ---------- AGENT: the pin offer sits in the focus path ---------- */
+.offer{position:absolute;left:var(--safe-x);bottom:300px;z-index:4;
+  height:88px;padding:0 26px 0 30px;border-radius:var(--radius-lg);
+  background:var(--panel-2);box-shadow:inset 0 0 0 1px var(--hairline);backdrop-filter:blur(14px);
+  display:none;align-items:center;gap:22px;max-width:1180px}
+.offer.is-on{display:flex;animation:offerIn 420ms var(--ease-out)}
+@keyframes offerIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.offer__lead{font-size:22px;font-weight:600;color:var(--ink-0)}
+.offer__sub{margin-top:4px;font-size:19px;color:var(--ink-2)}
+
+/* ---------- PICKER: precision surface goes flat black (principle 7) ---------- */
+.flatbg{position:absolute;inset:0;background:#000;
+  background-image:radial-gradient(120% 70% at 50% -14%,rgba(255,255,255,.07),transparent 62%)}
+.pick{position:absolute;left:var(--safe-x);top:190px;right:var(--safe-x);z-index:2}
+.pick__eyebrow{font-size:19px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2)}
+.pick__title{margin-top:14px;font-size:54px;font-weight:700;color:var(--ink-0);line-height:1.05}
+.pick__qs{margin-top:54px;display:flex;flex-direction:column;gap:38px}
+.q__label{font-size:20px;color:var(--ink-2);margin-bottom:16px}
+.q__row{display:flex;gap:16px}
+.chip{border-radius:26px}
+.chip.is-sel{background:rgba(255,255,255,.15);color:var(--ink-0)}
+.chip.is-sel::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--ink-0);
+  margin-right:12px;flex:0 0 auto}
+.pick__foot{position:absolute;left:var(--safe-x);bottom:var(--safe-y);z-index:2;
+  display:flex;align-items:center;gap:20px}
+.pick__hint{font-size:18px;color:var(--ink-3)}
+
+/* ---------- CATALOG ---------- */
+#scr-catalog .shelves{left:calc(var(--safe-x) - 12px);padding:12px 0 0 12px;bottom:0;height:552px;overflow:hidden}
+#catalogRows{transition:transform 420ms var(--ease-out)}
+.crow{margin-bottom:24px}
+.tab{border-radius:12px}
+
+/* ---------- TOAST ---------- */
+.toast{position:absolute;right:var(--safe-x);top:var(--safe-y);z-index:60;
+  height:60px;padding:0 24px;border-radius:16px;background:rgba(255,255,255,.95);color:#000;
+  display:none;align-items:center;font-size:20px;font-weight:600;
+  box-shadow:0 18px 48px rgba(0,0,0,.6)}
+.toast.is-on{display:flex;animation:offerIn 320ms var(--ease-out)}
+
+/* ============================================================
+   PROVENANCE — every time Glance shows intelligence, it says how it
+   knows. A quiet line under the hero; trust is built by being legible.
+   ============================================================ */
+.hero__src{margin-top:18px;max-width:660px;font-size:16px;line-height:1.45;color:var(--ink-3);
+  display:none;align-items:flex-start;gap:11px}
+.hero__src.is-on{display:flex;animation:offerIn 420ms var(--ease-out)}
+.hero__src::before{content:"";margin-top:3px;width:15px;height:15px;flex:0 0 auto;border-radius:50%;
+  border:1.5px solid var(--ink-3);
+  background:radial-gradient(circle at 50% 42%, currentColor 0 1.5px, transparent 2px),
+            linear-gradient(currentColor,currentColor) 50% 62%/1.5px 5px no-repeat}
+.hero__src b{color:var(--ink-1);font-weight:600}
+
+/* ============================================================
+   AGENT BACKDROP — the working/answer screen goes calm. The bright
+   hero photo is dropped behind a soft dark gradient (principle 7).
+   ============================================================ */
+.agentbg{position:absolute;inset:0;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(92% 74% at 20% 24%, rgba(70,66,92,.34), transparent 60%),
+    radial-gradient(80% 82% at 90% 98%, rgba(38,46,66,.30), transparent 58%),
+    linear-gradient(180deg, rgba(0,0,0,.60) 0%, rgba(0,0,0,.82) 52%, rgba(0,0,0,.94) 100%)}
+
+/* ============================================================
+   CONTEXT MENU — hold ⏎ on a pin. Replaces the standing Pin CTAs;
+   options live here instead of cluttering the focus row (principle 11).
+   ============================================================ */
+.ctxmenu{position:absolute;z-index:70;min-width:308px;padding:9px;
+  background:rgba(20,20,24,.9);backdrop-filter:blur(22px);
+  border-radius:22px;box-shadow:0 28px 80px rgba(0,0,0,.62),inset 0 0 0 1px rgba(255,255,255,.09);
+  display:none;flex-direction:column;gap:3px}
+.ctxmenu.is-open{display:flex;animation:menuIn 200ms var(--ease-out)}
+@keyframes menuIn{from{opacity:0;transform:translateY(10px) scale(.97)}to{opacity:1;transform:none}}
+.ctxmenu__head{padding:13px 15px 8px;font-size:14px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink-3);display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+.mitem{height:58px;padding:0 16px;border-radius:14px;display:flex;align-items:center;gap:15px;
+  font-size:20px;color:var(--ink-1)}
+.mitem svg{width:22px;height:22px;flex:0 0 auto}
+.mitem.is-focused{background:#fff;color:#000}
+.mitem__sub{margin-left:auto;padding-left:16px;font-size:15px;color:var(--ink-3);
+  text-transform:uppercase;letter-spacing:.08em}
+.mitem.is-focused .mitem__sub{color:rgba(0,0,0,.5)}
+</style>
+</head>
+<body>
+<div id="viewport">
+  <div id="stage">
+
+    <!-- SHARED HERO BED — one bed under every surface -->
+    <div class="hero">
+      <div class="hero__layer is-live" id="heroA"></div>
+      <div class="hero__layer" id="heroB"></div>
+      <div class="dither"></div>
+      <div class="hero__scrim"></div>
+    </div>
+
+    <!-- SHARED LOCKUP + ACTIONS — the hero is whatever the system has to say -->
+    <div class="hero__lockup is-hidden" id="lockup">
+      <div class="hero__eyebrow" id="heroEyebrow"></div>
+      <div class="hero__title" id="heroTitle"></div>
+      <div class="hero__meta" id="heroMeta"></div>
+      <div class="hero__src" id="heroSrc"></div>
+    </div>
+    <div class="hero__actions is-hidden" id="heroActions"></div>
+
+    <!-- 1. AMBIENT / screensaver -->
+    <div class="screen" id="scr-ambient">
+      <div class="amb">
+        <div class="amb__time" id="ambTime">7:42</div>
+        <div class="amb__date" id="ambDate">Monday, 27 July</div>
+        <div class="amb__note">Bengaluru · 24° · light rain after 6</div>
+      </div>
+      <div class="edgehint" id="edgeHint">
+        <span class="edgehint__chev">‹</span>
+        <span class="edgehint__label">Pins</span>
+      </div>
+    </div>
+
+    <!-- 2. DETAIL — pins that open straight to information -->
+    <div class="screen" id="scr-detail">
+      <div class="strip">
+        <div class="strip__title" id="detailStripTitle"></div>
+        <div class="rail" id="detailRail"></div>
+      </div>
+    </div>
+
+    <!-- 3. PICKER — pins that need input first -->
+    <div class="screen" id="scr-picker">
+      <div class="flatbg"></div>
+      <div class="pick">
+        <div class="pick__eyebrow" id="pickEyebrow"></div>
+        <div class="pick__title" id="pickTitle"></div>
+        <div class="pick__qs" id="pickQs"></div>
+      </div>
+      <div class="pick__foot">
+        <button class="btn btn--solid" data-focusable id="pickGo">Find trips</button>
+        <span class="pick__hint">Already answered with the usual. Change only what matters.</span>
+      </div>
+    </div>
+
+    <!-- 4. AGENT — states take the hero; the pin offer sits in the focus path -->
+    <div class="screen" id="scr-agent">
+      <div class="agentbg"></div>
+      <div class="offer" id="offer">
+        <div class="offer__txt">
+          <div class="offer__lead" id="offerLead"></div>
+          <div class="offer__sub" id="offerSub"></div>
+        </div>
+        <button class="btn btn--solid btn--sm" data-focusable id="offerYes">Pin it</button>
+        <button class="btn btn--sm btn--ghost" data-focusable id="offerNo">Not now</button>
+      </div>
+      <div class="strip strip--agent">
+        <div class="strip__title" id="agentStripTitle"></div>
+        <div class="rail" id="agentRail"></div>
+      </div>
+    </div>
+
+    <!-- 5. CATALOG — every pin, shelved by category -->
+    <div class="screen" id="scr-catalog">
+      <div class="bar" id="catBar">
+        <div class="bar__brand">glance</div>
+      </div>
+      <div class="shelves"><div id="catalogRows"></div></div>
+    </div>
+
+    <!-- THE DRAWER: nav across the top, pins down the left -->
+    <div id="drawer">
+      <div class="drawer__scrim"></div>
+      <div class="alledge" id="allEdge">
+        <span class="edgehint__chev">‹</span>
+        <span class="edgehint__label">All pins</span>
+      </div>
+      <div class="panel">
+        <div class="navrow" id="navRow"></div>
+        <div class="pincol" id="pinCol"></div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <!-- Context menu — summoned by holding ⏎ on a pin -->
+    <div class="ctxmenu" id="ctxmenu"></div>
+
+    <!-- HUD: sound state + keys -->
+    <div class="hud" id="hud"><span class="dot"></span><span id="hudText">sound on · ↑↓←→ move · ⏎ select · esc back · m mute · t behaviours</span></div>
+
+  </div>
+</div>
+
+<script>
+/* ============================================================================
+   TV  —  prototype framework. Keep this block intact across prototypes.
+   Author screen content in the markup above (and the demo seed below).
+
+   Public API
+     TV.sound.move()/.commit()/.back()/.blocked()/.type()/.toggleMute()
+     TV.focus.set(el) / .move(dir) / .current
+     TV.setHero({eyebrow,title,meta,image})   -> dwell + two-layer crossfade
+     TV.pushView(fn) / TV.popView()           -> esc-back stack
+     TV.onSelect(el, handler)                 -> enter handler per element
+   ============================================================================ */
+const TV = (() => {
+  /* ---------- SOUND ENGINE ----------------------------------------------
+     Web Audio, procedurally generated (self-contained). Energy kept in the
+     900–1300Hz band where TV speakers are honest (principle 21). Navigation
+     sound only — no ambient bed, you don't own the volume (principle 19).
+     Focus tick throttled to ~55ms (principle 20). Each event class has its
+     own signature (principle 21). Muteable — 'm'. ------------------------- */
+  const Sound = (() => {
+    let ctx=null, master=null, muted=false, lastMove=0;
+    function ready(){
+      if(ctx) return;
+      const AC = window.AudioContext||window.webkitAudioContext; if(!AC) return;
+      ctx = new AC(); master = ctx.createGain(); master.gain.value=0.18; master.connect(ctx.destination);
+    }
+    function tone(freq, dur, {type="sine", gain=1, glideTo=null, delay=0}={}){
+      if(!ctx||muted) return;
+      const t0=ctx.currentTime+delay;
+      const o=ctx.createOscillator(), g=ctx.createGain();
+      o.type=type; o.frequency.setValueAtTime(freq,t0);
+      if(glideTo) o.frequency.exponentialRampToValueAtTime(glideTo,t0+dur);
+      g.gain.setValueAtTime(0.0001,t0);
+      g.gain.exponentialRampToValueAtTime(gain,t0+0.008);       // fast attack
+      g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);       // decay
+      o.connect(g).connect(master); o.start(t0); o.stop(t0+dur+0.02);
+    }
+    return {
+      // dry tick per focus move; throttled so a held key doesn't machine-gun
+      move(){ ready(); const now=performance.now(); if(now-lastMove<55) return; lastMove=now;
+              tone(1150, 0.045, {type:"sine", gain:0.9}); },
+      // rising two-tone for committing (principle 21)
+      commit(){ ready(); tone(980,0.06,{gain:1}); tone(1240,0.08,{gain:1,delay:0.05}); },
+      // falling two-tone for going back
+      back(){ ready(); tone(1240,0.06,{gain:.85}); tone(940,0.09,{gain:.85,delay:0.05}); },
+      // deliberately unmusical thud for a blocked/edge move — two detuned
+      // partials kept in-band so it's audible but reads as "wrong"
+      blocked(){ ready(); tone(1000,0.12,{type:"square",gain:.55});
+                 tone(1057,0.12,{type:"square",gain:.4,delay:0.002}); },
+      // dry, quick tick for typing
+      type(){ ready(); tone(940,0.03,{type:"triangle",gain:.7}); },
+      toggleMute(){ muted=!muted; return muted; },
+      get muted(){ return muted; }
+    };
+  })();
+
+  /* ---------- FOCUS ENGINE ----------------------------------------------
+     Geometric spatial navigation (principle 8). No hand-authored neighbour
+     maps. Edge bounce on a blocked direction (principle 9). Focus is the
+     cursor and survives any backdrop (principles 1,2). --------------------- */
+  const Focus = (() => {
+    let current=null;
+    const focusables = () => [...document.querySelectorAll('[data-focusable]')]
+      .filter(el => el.offsetParent!==null && !el.hasAttribute('data-inert'));
+
+    function rect(el){ const r=el.getBoundingClientRect();
+      return {l:r.left,r:r.right,t:r.top,b:r.bottom,cx:(r.left+r.right)/2,cy:(r.top+r.bottom)/2}; }
+
+    function set(el){
+      if(!el||el===current) { if(el) Sound.move(); return; }
+      if(current) current.classList.remove('is-focused');
+      current=el; el.classList.add('is-focused');
+      el.scrollIntoView?.({block:'nearest',inline:'nearest',behavior:'smooth'});
+      Sound.move();
+      el.dispatchEvent(new CustomEvent('tv-focus',{bubbles:true}));
+    }
+
+    /* score = primaryAxisDistance + crossAxisMisalignment*2.4 − edgeOverlap*0.6
+       Alignment weighted above raw distance is what makes it feel like a
+       remote rather than a tab order (principle 8). */
+    function best(dir){
+      if(!current) return null;
+      const c=rect(current); const cand=[];
+      for(const el of focusables()){
+        if(el===current) continue;
+        const t=rect(el);
+        let primary, cross, onSide;
+        if(dir==='left'||dir==='right'){
+          onSide = dir==='right' ? t.cx > c.cx+1 : t.cx < c.cx-1;
+          primary = Math.abs(t.cx-c.cx);
+          cross   = Math.abs(t.cy-c.cy);
+          var overlap = Math.max(0, Math.min(c.b,t.b)-Math.max(c.t,t.t));
+        }else{
+          onSide = dir==='down' ? t.cy > c.cy+1 : t.cy < c.cy-1;
+          primary = Math.abs(t.cy-c.cy);
+          cross   = Math.abs(t.cx-c.cx);
+          var overlap = Math.max(0, Math.min(c.r,t.r)-Math.max(c.l,t.l));
+        }
+        if(!onSide) continue;
+        cand.push({el, score: primary + cross*2.4 - overlap*0.6});
+      }
+      cand.sort((a,b)=>a.score-b.score);
+      return cand.length?cand[0].el:null;
+    }
+
+    function bounce(dir){
+      if(!current) return;
+      Sound.blocked();
+      const d = {left:[-13,0],right:[13,0],up:[0,-13],down:[0,13]}[dir];
+      const el=current, base=el.style.transform||'';
+      el.style.transition='transform 120ms var(--ease)';
+      el.style.transform=`translate(${d[0]}px,${d[1]}px)`;
+      setTimeout(()=>{ el.style.transition='transform 300ms var(--ease-out)'; el.style.transform=base; },120);
+    }
+
+    function move(dir){ const n=best(dir); if(n) set(n); else bounce(dir); }
+    /* drop the cursor entirely — used on lean-back screens (ambient) so
+       nothing carries a loud focus ring while idle */
+    function clear(){ if(current) current.classList.remove('is-focused'); current=null; }
+    return { set, move, best, clear, get current(){return current}, focusables };
+  })();
+
+  /* ---------- HERO (dwell + two-layer crossfade) ------------------------- */
+  let live='A', dwellTimer=null;
+  function setHero({eyebrow,title,meta,image}){
+    clearTimeout(dwellTimer);
+    dwellTimer=setTimeout(()=>{
+      if(eyebrow!=null) heroEyebrow.textContent=eyebrow;
+      if(title!=null)   heroTitle.textContent=title;
+      if(meta!=null)    heroMeta.textContent=meta;
+      if(image!=null){
+        const inc = live==='A' ? heroB : heroA;   // fade the OTHER layer in
+        const out = live==='A' ? heroA : heroB;
+        inc.style.backgroundImage=`url("${image}")`;
+        inc.classList.add('is-live'); out.classList.remove('is-live');
+        live = live==='A' ? 'B' : 'A';
+      }
+    }, 420); // dwell (principle 16)
+  }
+
+  /* ---------- VIEW STACK (esc = back) ------------------------------------ */
+  const viewStack=[];
+  function pushView(onBack){ viewStack.push(onBack); }
+  function popView(){ const fn=viewStack.pop(); if(fn){ Sound.back(); fn(); return true;} return false; }
+
+  /* ---------- SELECT handlers -------------------------------------------- */
+  const selectMap=new WeakMap();
+  function onSelect(el,fn){ selectMap.set(el,fn); }
+  function fireSelect(){ const el=Focus.current; if(!el) return;
+    Sound.commit(); const fn=selectMap.get(el); if(fn) fn(el);
+    el.dispatchEvent(new CustomEvent('tv-select',{bubbles:true})); }
+
+  /* ---------- KEY HANDLING ----------------------------------------------- */
+  const KEYS={ArrowLeft:'left',ArrowRight:'right',ArrowUp:'up',ArrowDown:'down'};
+  window.addEventListener('keydown',e=>{
+    if(KEYS[e.key]){ e.preventDefault(); Focus.move(KEYS[e.key]); return; }
+    if(e.key==='Enter'){ e.preventDefault(); fireSelect(); return; }
+    if(e.key==='Escape'){ e.preventDefault(); popView(); return; }
+    if(e.key==='m'||e.key==='M'){ const m=Sound.toggleMute(); hud.classList.toggle('is-muted',m);
+      hudText.textContent=(m?'sound off':'sound on')+' · ↑↓←→ move · ⏎ select · esc back · m mute'; return; }
+    if(e.key==='g'||e.key==='G'){ stage.classList.toggle('show-safe'); return; }
+  });
+
+  /* ---------- STAGE SCALING (overscan-safe fit) -------------------------- */
+  function fit(){
+    const s=Math.min(innerWidth/1920, innerHeight/1080);
+    stage.style.transform=`scale(${s})`;
+  }
+  addEventListener('resize',fit); fit();
+
+  return { sound:Sound, focus:Focus, setHero, pushView, popView, onSelect, fireSelect,
+           get stage(){return stage} };
+})();
+
+/* ============================================================================
+   GLANCE · PINS — one agent, many mini apps.
+
+   Use cases are filtered by one test: if one person could do it faster on a
+   phone while standing up, it is not a TV pin. What survives does one of
+   three jobs — decide together, see it big, or take it off the screen.
+
+   Tile system is Metro-derived: one square unit, tiles are 1×1 or 2×1.
+   Width encodes state — a wide tile has something live to tell you.
+   ============================================================================ */
+(function app(){
+  const $ = id => document.getElementById(id);
+
+  /* ---------- artwork ------------------------------------------------------ */
+  const PHOTOS = [
+    '1542291026-7eec264c27ff','1460353581641-37baddab0fa2','1595950653106-6c9ebd614d3a',
+    '1600185365483-26d7a4cc7519','1491553895911-0055eca6402d','1507525428034-b723cf961d3e',
+    '1493809842364-78817add7ffb','1506905925346-21bda4d32df4','1441986300917-64674bd600d8',
+    '1540189549336-e6e99c3679fe','1502602898657-3e91760cbb34','1519681393784-d120267933ba',
+    '1555041469-a586c61ea9bc','1523381210434-271e8be1f52b'
+  ];
+  const art  = i => `https://images.unsplash.com/photo-${PHOTOS[i]}?w=560&q=60`;
+  const big  = i => `https://images.unsplash.com/photo-${PHOTOS[i]}?w=1920&q=60`;
+  const PR = (i,n,m,t) => ({art:art(i), name:n, meta:m, tag:t||null});
+
+  const ic = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+  const ICON = {
+    plane  : ic('<path d="M2.5 12.4l19-7.4-7 17.9-3.2-7.2z"/>'),
+    shirt  : ic('<path d="M9 3.4l3 2 3-2 5.5 3.2-2.4 4.1-2.1-1.1v11H8v-11l-2.1 1.1L3.5 6.6z"/>'),
+    compass: ic('<circle cx="12" cy="12" r="8.8"/><path d="M15.6 8.4l-2.3 5-5 2.3 2.3-5z"/>'),
+    play   : ic('<rect x="2.6" y="4.6" width="18.8" height="13" rx="1.6"/><path d="M10.4 8.6l4.4 2.5-4.4 2.5z"/><path d="M8 20.6h8"/>'),
+    sofa   : ic('<path d="M3.4 11.4V8a2 2 0 012-2h13.2a2 2 0 012 2v3.4"/><path d="M2.4 12.6a2 2 0 014 0v2.8h11.2v-2.8a2 2 0 014 0v5.8H2.4z"/>'),
+    frame  : ic('<rect x="3.4" y="3.4" width="17.2" height="17.2" rx="1.6"/><path d="M3.4 15.4l4.6-4.4 4.2 4 3-2.8 5.4 5.2"/>'),
+    split  : ic('<rect x="2.6" y="4.6" width="8" height="14.8" rx="1.4"/><rect x="13.4" y="4.6" width="8" height="14.8" rx="1.4"/>'),
+    drop   : ic('<path d="M12 3.2s6 6.2 6 10.1a6 6 0 01-12 0c0-3.9 6-10.1 6-10.1z"/>'),
+    gift   : ic('<rect x="2.8" y="8.4" width="18.4" height="4" rx="1"/><path d="M4.4 12.4v8.2h15.2v-8.2M12 8.4v12.2"/><path d="M12 8.4S10.4 3.4 8 3.4a2.3 2.3 0 000 5zM12 8.4s1.6-5 4-5a2.3 2.3 0 010 5z"/>'),
+    tag    : ic('<path d="M3.6 11.6V3.6H12l8.4 8.4-8.4 8.4z"/><circle cx="7.6" cy="7.6" r="1.3"/>'),
+    star   : ic('<path d="M12 3l2.6 6.2 6.6.5-5 4.3 1.5 6.5L12 17l-5.7 3.5 1.5-6.5-5-4.3 6.6-.5z"/>'),
+    cup    : ic('<path d="M5 5h12v6a6 6 0 01-12 0z"/><path d="M17 6.6h1.6a2.4 2.4 0 010 4.8H17"/><path d="M4 20.4h14"/>'),
+    moon   : ic('<path d="M20.4 14.4A8.6 8.6 0 019.6 3.6a8.8 8.8 0 100 16.8 8.6 8.6 0 0010.8-6z"/>'),
+    fridge : ic('<rect x="5.4" y="2.6" width="13.2" height="18.8" rx="2"/><path d="M5.4 10h13.2M8.4 6v2M8.4 12.6v2.6"/>'),
+    home   : ic('<path d="M3.6 11L12 4.2 20.4 11v9.3h-6v-6h-4.8v6h-6z"/>'),
+    plus   : ic('<path d="M12 5.2v13.6M5.2 12h13.6"/>'),
+    grid   : ic('<rect x="3.6" y="3.6" width="7" height="7"/><rect x="13.4" y="3.6" width="7" height="7"/><rect x="3.6" y="13.4" width="7" height="7"/><rect x="13.4" y="13.4" width="7" height="7"/>'),
+    gear   : ic('<circle cx="12" cy="12" r="3.1"/><path d="M12 2.9v2.3M12 18.8v2.3M21.1 12h-2.3M5.2 12H2.9M18.4 5.6l-1.6 1.6M7.2 16.8l-1.6 1.6M18.4 18.4l-1.6-1.6M7.2 7.2L5.6 5.6"/>'),
+    chat   : ic('<path d="M20.4 12.2c0 3.9-3.8 7.1-8.4 7.1-1 0-2-.15-2.9-.42L4 20.4l1.6-4.1a6.7 6.7 0 01-2-4.6C3.6 8.3 7.4 5.1 12 5.1s8.4 3.2 8.4 7.1z"/>')
+  };
+
+  const KIND = { display:'shows info', instant:'opens running', input:'asks first' };
+
+  /* ==========================================================================
+     THE USE CASES
+     Cut from the earlier set: restock, price watch, refills, will-it-fit,
+     measure. All solo transactional errands — a phone beats the TV at every
+     one of them. What's left is shared, visual, or impossible anywhere else.
+     ========================================================================== */
+  const USES = {
+
+  /* ---- TRAVEL — the strongest category on a TV. Shared, visual, planned. -- */
+  'trip-plan':{
+    icon:'compass', ph:7, title:'Plan a trip together', kind:'input',
+    what:'Two people, one screen, three options. The decision that actually needs both of you in the room.',
+    qs:[{label:'Who’s going',opts:['Just me','Two of us','The family']},
+        {label:'How long',opts:['A weekend','About a week','Longer']},
+        {label:'What kind of place',opts:['Beach','Mountains','A city']}],
+    steps:['Looking at the next four weekends…','Checking fares from Bengaluru…','Ruling out the crowded ones…'],
+    res:{eyebrow:'THREE THAT FIT', title:'Gokarna, in three weeks, for ₹11,400.',
+      meta:'Two of you, three nights, beach. Cheapest of the three and the only one with a room left on the sand.',
+      strip:'All three', acts:[{label:'Hold Gokarna',solid:true},{label:'Compare all three'}],
+      prods:[PR(5,'Gokarna · 3 nights','<b>₹11,400</b>','BEST'),PR(11,'Coorg · 3 nights','<b>₹13,900</b>'),PR(10,'Pondicherry · 2 nights','<b>₹9,600</b>')]},
+    offer:{lead:'Want this on your menu?', sub:'Beach weekends from Bengaluru under ₹15k — kept fresh, checked every week.',
+      pin:{id:'beach-weekends'}}},
+
+  'somewhere':{
+    icon:'plane', ph:11, title:'Take me somewhere', kind:'instant',
+    what:'No questions at all. It shows you places you could actually be in this month, and you say when one lands.',
+    steps:['Reading the next four weekends…','Checking what’s in season…','Finding what’s still cheap…'],
+    res:{eyebrow:'THIS MONTH', title:'Hampi, on the 14th, for ₹8,900.',
+      meta:'Post-monsoon, before the crowds, and you’ve never been. Two nights, sleeper both ways.',
+      strip:'Or one of these', acts:[{label:'Show me Hampi',solid:true},{label:'Somewhere else'}],
+      prods:[PR(11,'Hampi','<b>₹8,900</b>','PICK'),PR(7,'Chikmagalur','<b>₹10,200</b>'),PR(5,'Gokarna','<b>₹11,400</b>')]}},
+
+  'filmed-here':{
+    icon:'play', ph:10, title:'Where was that filmed', kind:'instant',
+    what:'The place from what you were just watching, turned into somewhere you could actually go. Only works on the screen playing it.',
+    steps:['Placing the scene…','Finding the real location…','Checking what it costs to get there…'],
+    res:{eyebrow:'FROM WHAT YOU WATCHED', title:'That coastline is Varkala, and it’s ₹9,400 away.',
+      meta:'Episode 3, the cliff walk. Two hours from Trivandrum, and the cliff-edge places are still open in August.',
+      strip:'Getting there', acts:[{label:'Plan this trip',solid:true},{label:'Save it for later'}],
+      prods:[PR(5,'Varkala · 3 nights','<b>₹9,400</b>'),PR(10,'The cliff walk','Free · sunset'),PR(11,'Nearby: Kollam','<b>₹6,100</b>')]}},
+
+  'goa-countdown':{
+    icon:'plane', ph:5, title:'Goa · 3 days out', kind:'display', wide:true, live:true,
+    state:'4 of 11 packed · showers Thursday',
+    what:'The trip you’ve already booked, sitting on the screen the whole house walks past.',
+    detail:{eyebrow:'PINNED · 3 DAYS OUT', title:'Goa, 3–7 August', ph:5,
+      meta:'Everything you set up is still on track. One thing needs you.',
+      src:'Kept current from your <b>booking confirmation</b>, your <b>calendar</b>, and the Goa forecast — refreshed this morning.',
+      strip:'Your trip', acts:[{label:'Finish the packing list',solid:true},{label:'Unpin',unpin:1}],
+      cards:[{label:'FLIGHT',value:'6E 6172',sub:'Thu 06:40 · on time'},
+             {label:'STAY',value:'Anjuna',sub:'Check-in 2pm · confirmed'},
+             {label:'PACKING',value:'4 of 11',sub:'Needs you'},
+             {label:'WEATHER',value:'31° / 26°',sub:'Showers Thursday'},
+             {label:'SPENT',value:'₹18,400',sub:'of ₹25,000'}]}},
+
+  /* ---- FASHION — kept only where scale or the screen's content matters ---- */
+  'occasion':{
+    icon:'star', ph:13, title:'Dress for the occasion', kind:'input',
+    what:'A wedding, an interview, a festival. High stakes, weeks of notice, and usually more than one opinion in the room.',
+    qs:[{label:'What’s the occasion',opts:['A wedding','An interview','A festival']},
+        {label:'When',opts:['This week','This month','Later']},
+        {label:'What you’d spend',opts:['Under ₹5k','₹5–15k','Open']}],
+    steps:['Reading the occasion…','Checking what you already own…','Finding what arrives in time…'],
+    res:{eyebrow:'FOR THE 14TH', title:'Ivory kurta, dark churidar, the brown juttis you own.',
+      meta:'Daytime wedding, outdoors, and it’s going to be 33°. One thing to buy, and it lands on the 11th.',
+      strip:'Two you own · one to buy', acts:[{label:'See the kurta',solid:true},{label:'Show me another'}],
+      prods:[PR(13,'Ivory silk kurta','<b>₹4,200</b>','ARRIVES 11TH'),PR(4,'Brown juttis','In your wardrobe','OWNED'),PR(2,'Dark churidar','In your wardrobe','OWNED')]}},
+
+  'get-look':{
+    icon:'play', ph:0, title:'Get the look', kind:'instant', wide:true, live:true,
+    state:'From last night’s episode',
+    what:'The whole outfit from what you were watching — not one item, the look. This only exists on the screen that played it.',
+    steps:['Finding the scene…','Separating the pieces…','Matching what’s in stock near you…'],
+    res:{eyebrow:'EPISODE 4, THE ROOFTOP', title:'Oversized cream shirt, wide black trousers, silver chain.',
+      meta:'Three pieces carry it. The shirt is the one that matters — the rest you can get close to for a lot less.',
+      strip:'The three pieces', acts:[{label:'See all three',solid:true},{label:'Cheaper versions'}],
+      prods:[PR(13,'Cream oversized shirt','<b>₹3,400</b>','THE ONE'),PR(0,'Wide black trousers','<b>₹2,900</b>'),PR(4,'Silver chain','<b>₹1,200</b>')]}},
+
+  'try-on':{
+    icon:'shirt', ph:4, title:'See it on', kind:'instant',
+    what:'The garment at body scale on the biggest screen in the house. The one judgement a phone physically cannot help you make.',
+    steps:['Loading it at full height…','Matching your size…','Checking the drape…'],
+    res:{eyebrow:'AT FULL SCALE', title:'It’s longer on you than the photos suggest.',
+      meta:'The model is 6\'1". On your measurements it sits below the hip, not on it. Same jacket, different garment.',
+      strip:'Sizes that work', acts:[{label:'Order the M',solid:true},{label:'Try another size'}],
+      prods:[PR(13,'Size M','Closest fit','PICK'),PR(0,'Size L','Boxier'),PR(4,'Same in black','<b>₹4,900</b>')]}},
+
+  'follow':{
+    icon:'tag', ph:2, title:'Brands you follow', kind:'display', wide:true, live:true,
+    state:'2 new this week · 1 back in stock',
+    what:'New arrivals from the six brands you actually wear. Zero input — you just look.',
+    detail:{eyebrow:'THIS WEEK', title:'Two new, one back in your size', ph:2,
+      meta:'From the six you follow. Everything else this week was a repeat or a colourway.',
+      src:'From the <b>six brands you follow</b>, matched to your size and checked against what you already own.',
+      strip:'New since you last looked', acts:[{label:'See all six brands',solid:true},{label:'Unpin',unpin:1}],
+      prods:[PR(0,'Suede runners','<b>₹6,400</b>','NEW'),PR(3,'Canvas high-tops','<b>₹3,200</b>','NEW'),PR(2,'The derby, size 9','<b>₹8,900</b>','BACK'),PR(4,'Leather loafers','<b>₹11,500</b>')]}},
+
+  /* ---- HOME & LIVING — the TV's home advantage. The room is right there. -- */
+  'in-this-room':{
+    icon:'sofa', ph:12, title:'See it in this room', kind:'input',
+    what:'Puts the piece in your actual room at the right size, on the screen that’s already sitting in it. Impossible on a phone.',
+    qs:[{label:'Which room',opts:['Living room','Bedroom','Study']},
+        {label:'What are you placing',opts:['Seating','A rug','Lighting']},
+        {label:'What you’d spend',opts:['Under ₹20k','₹20–50k','Open']}],
+    steps:['Loading your living room…','Scaling to the wall you measured…','Placing it where the light falls…'],
+    res:{eyebrow:'AT REAL SCALE', title:'The three-seater eats the window. The two-seater doesn’t.',
+      meta:'At 2.1m it comes within 30cm of the balcony door. The 1.6m version leaves the walkway you actually use.',
+      strip:'Both, at scale', acts:[{label:'See the two-seater',solid:true},{label:'Try a different room'}],
+      prods:[PR(12,'Two-seater, 1.6m','<b>₹38,000</b>','FITS'),PR(6,'Three-seater, 2.1m','<b>₹46,000</b>','TIGHT'),PR(12,'Modular, 1.8m','<b>₹42,000</b>')]}},
+
+  'finish-room':{
+    icon:'home', ph:6, title:'Finish this room', kind:'instant', wide:true, live:true,
+    state:'₹18k left · 3 gaps',
+    what:'You have a floor and a sofa. It works out what’s missing, what it costs, and what it would look like together.',
+    steps:['Reading what’s already in the room…','Finding the gaps…','Working to what’s left of the budget…'],
+    res:{eyebrow:'THREE GAPS', title:'A rug, one floor lamp, and something on the long wall.',
+      meta:'₹18,400 left. The rug is the one that changes the room — the other two you could do later without it looking unfinished.',
+      strip:'What’s missing', acts:[{label:'Start with the rug',solid:true},{label:'Show me all three'}],
+      prods:[PR(6,'Jute rug, 6×9','<b>₹9,800</b>','FIRST'),PR(12,'Floor lamp, brass','<b>₹5,400</b>'),PR(6,'Long wall, framed set','<b>₹3,200</b>')]}},
+
+  'side-by-side':{
+    icon:'split', ph:8, title:'Two, side by side', kind:'instant',
+    what:'Both options, full width, at the same scale. The comparison ritual that only works when two people can see it at once.',
+    steps:['Putting both up…','Matching the scale…','Levelling the lighting…'],
+    res:{eyebrow:'SIDE BY SIDE', title:'Same price. One of them is 40cm deeper.',
+      meta:'On the left, the depth you’d want for lying on. On the right, the depth that leaves you a walkway. That’s the whole decision.',
+      strip:'The difference', acts:[{label:'Take the left',solid:true},{label:'Take the right'}],
+      prods:[PR(12,'Left · 96cm deep','<b>₹41,000</b>'),PR(6,'Right · 56cm deep','<b>₹41,000</b>'),PR(12,'Both in charcoal','Same price')]}},
+
+  'colour-wall':{
+    icon:'drop', ph:12, title:'Colour on the wall', kind:'instant',
+    what:'Paint at wall scale, in your light. A phone swatch has never once told you the truth about a colour.',
+    steps:['Loading the wall…','Matching your evening light…','Putting up three…'],
+    res:{eyebrow:'IN YOUR LIGHT', title:'The one you liked goes green after 6pm.',
+      meta:'Your living room faces west. Two of the three hold; the warm grey turns under the evening light coming through the balcony.',
+      strip:'All three, on your wall', acts:[{label:'See the two that hold',solid:true},{label:'Try other colours'}],
+      prods:[PR(6,'Lime white','Holds','SAFE'),PR(12,'Clay','Holds','SAFE'),PR(6,'Warm grey','Shifts green')]}},
+
+  /* ---- SHOPPING — occasions and content. Both are TV-shaped. -------------- */
+  'shop-scene':{
+    icon:'play', ph:13, title:'Shop the scene', kind:'display', wide:true, live:true,
+    state:'9 things from tonight',
+    what:'Everything wearable, sittable or drinkable in what you just watched. The one use case that cannot exist anywhere else.',
+    detail:{eyebrow:'FROM TONIGHT', title:'Nine things, four you could actually buy', ph:13,
+      meta:'The jacket and the lamp are exact. The rest are the closest thing in stock near you.',
+      src:'Matched to <b>tonight’s episode</b>, scene by scene. Exact where the brand is known, closest in stock otherwise.',
+      strip:'From what you watched', acts:[{label:'See the jacket',solid:true},{label:'Unpin',unpin:1}],
+      prods:[PR(13,'The jacket, ep 4','<b>₹7,900</b>','EXACT'),PR(12,'Arc floor lamp','<b>₹12,400</b>','EXACT'),PR(0,'White low-tops','<b>₹4,100</b>','CLOSE'),PR(6,'Rattan chair','<b>₹9,600</b>','CLOSE')]}},
+
+  'gift-together':{
+    icon:'gift', ph:8, title:'Find a gift together', kind:'input',
+    what:'Two of you deciding for a third person. That is a conversation, and a conversation needs one screen, not two.',
+    qs:[{label:'Who’s it for',opts:['A parent','A friend','A child']},
+        {label:'The occasion',opts:['Birthday','Wedding','Just because']},
+        {label:'What you’d spend',opts:['Under ₹2k','₹2–8k','Open']}],
+    steps:['Reading what they’ve liked before…','Ruling out what they own…','Checking what arrives in time…'],
+    res:{eyebrow:'THREE TO ARGUE ABOUT', title:'The record, the shawl, or the dinner.',
+      meta:'All three land before the 20th. The record is the one they’d keep, the dinner is the one they’d remember.',
+      strip:'Pick one between you', acts:[{label:'Take the record',solid:true},{label:'Show me three more'}],
+      prods:[PR(8,'The 1975 pressing','<b>₹3,400</b>'),PR(13,'Kashmiri shawl','<b>₹6,200</b>'),PR(9,'Dinner for two','<b>₹4,500</b>')]},
+    offer:{lead:'Keep this going?', sub:'Gifts for Amma — remembers what she’s been given and what she already owns.',
+      pin:{id:'gifts-amma'}}},
+
+  'big-buy':{
+    icon:'fridge', ph:12, title:'The big buy', kind:'input',
+    what:'Fridge, mattress, television. The household decisions worth sitting down for — and the ones nobody makes alone.',
+    qs:[{label:'What are you replacing',opts:['A fridge','A mattress','A washing machine']},
+        {label:'How soon',opts:['This week','This month','Researching']},
+        {label:'What you’d spend',opts:['Under ₹30k','₹30–70k','Open']}],
+    steps:['Reading what fits the space…','Checking ten years of running cost…','Finding who installs it…'],
+    res:{eyebrow:'TWO WORTH IT', title:'The cheaper one costs ₹14,000 more over ten years.',
+      meta:'₹6,000 less today, one star lower. On your usage that’s ₹1,400 a year in electricity, every year, for a decade.',
+      strip:'The two', acts:[{label:'See the 5-star',solid:true},{label:'Show me a third'}],
+      prods:[PR(12,'5-star, 265L','<b>₹42,000</b>','CHEAPER OVERALL'),PR(8,'4-star, 265L','<b>₹36,000</b>'),PR(12,'5-star, 240L','<b>₹38,500</b>')]}},
+
+  'festive':{
+    icon:'star', ph:9, title:'Festive list', kind:'display', wide:true, live:true,
+    state:'11 people · ₹19k of ₹40k spent',
+    what:'One list, many people, one budget. It sits on the screen the whole household passes, which is the point.',
+    detail:{eyebrow:'DIWALI · 6 WEEKS', title:'Eleven people, four still open', ph:9,
+      meta:'You’re ₹19,400 in. The four left are the ones you always leave till last.',
+      src:'Built from <b>last year’s list</b> and this year’s spends. Everyone here is someone you actually buy for.',
+      strip:'Still open', acts:[{label:'Sort out the four',solid:true},{label:'Unpin',unpin:1}],
+      cards:[{label:'DONE',value:'7 of 11',sub:'₹19,400 spent'},
+             {label:'LEFT',value:'₹20,600',sub:'of ₹40,000'},
+             {label:'STILL OPEN',value:'4 people',sub:'Amma, Ravi, the Shettys'},
+             {label:'LAST DELIVERY',value:'Oct 14',sub:'For the 20th'}]}},
+
+  /* ---- WELLNESS — thin on TV. Two survive, and only just. ---------------- */
+  'dinner-week':{
+    icon:'cup', ph:9, title:'Dinner this week', kind:'instant', live:true,
+    what:'Seven dinners, one shop, nothing you disliked last time. A Sunday-evening ritual, in front of the household it feeds.',
+    steps:['Reading last week’s leftovers…','Avoiding what nobody finished…','Building one shop…'],
+    res:{eyebrow:'SEVEN NIGHTS', title:'One shop, ₹2,400, and Thursday is deliberately lazy.',
+      meta:'Nothing repeats from last week. The dal you both went back for is in twice, in two different forms.',
+      strip:'The week', acts:[{label:'Order the shop',solid:true},{label:'Swap a night'}],
+      prods:[PR(9,'Mon–Wed','Three cooked'),PR(9,'Thursday','Deliberately lazy'),PR(9,'Fri–Sun','Two cooked, one out')]}},
+
+  'wind-down':{
+    icon:'moon', ph:6, title:'Wind down', kind:'instant',
+    what:'The screen is already in the room at 10pm. A short evening sequence that runs on it, rather than on a phone you should be putting away.',
+    steps:['Dimming the room…','Cueing the sequence…','Going quiet…'],
+    res:{eyebrow:'TWELVE MINUTES', title:'Lights down, sound low, nothing to decide.',
+      meta:'Same sequence every night. It ends by turning itself off, which is the only feature that matters.',
+      strip:'Tonight', acts:[{label:'Start it',solid:true},{label:'Make it shorter'}],
+      prods:[PR(6,'12 minutes','Standard'),PR(6,'6 minutes','Short'),PR(6,'20 minutes','Long')]}}
+  };
+
+  /* pins created by the agent mid-conversation */
+  USES['beach-weekends'] = {icon:'compass', ph:5, title:'Beach weekends', kind:'display', wide:true, live:true,
+    state:'Under ₹15k · 3 new this week',
+    what:'Beach weekends from Bengaluru under ₹15k, checked every week.',
+    detail:{eyebrow:'THIS WEEK', title:'Three under ₹15k', ph:5, meta:'Checked on Monday. Gokarna moved ₹1,200 in your favour.',
+      src:'Fares from Bengaluru, <b>re-checked every Monday</b>. Only trips under ₹15k reach this pin.',
+      strip:'Right now', acts:[{label:'See Gokarna',solid:true},{label:'Unpin',unpin:1}],
+      prods:[PR(5,'Gokarna · 3 nights','<b>₹11,400</b>','−₹1,200'),PR(10,'Pondicherry · 2 nights','<b>₹9,600</b>'),PR(11,'Udupi · 2 nights','<b>₹8,200</b>')]}};
+  USES['gifts-amma'] = {icon:'gift', ph:8, title:'Gifts for Amma', kind:'display', live:true,
+    what:'Remembers what she’s been given and what she already owns.',
+    detail:{eyebrow:'BIRTHDAY · 5 WEEKS', title:'Three she doesn’t already have', ph:8,
+      meta:'Ruled out the shawl — you gave her one in 2023.', strip:'Ideas',
+      src:'Cross-checked against <b>everything you’ve given her since 2021</b>, so nothing repeats.',
+      acts:[{label:'See the record',solid:true},{label:'Unpin',unpin:1}],
+      prods:[PR(8,'The 1975 pressing','<b>₹3,400</b>'),PR(9,'Dinner for two','<b>₹4,500</b>'),PR(13,'Kanjeevaram, blue','<b>₹8,900</b>')]}};
+
+  Object.keys(USES).forEach(k=>{ const u=USES[k]; u.id=k; u.art=art(u.ph); u.big=big(u.ph); });
+
+  const CAT = [
+    {id:'tv',       label:'Made for the big screen', items:['shop-scene','in-this-room','gift-together','side-by-side','try-on']},
+    {id:'travel',   label:'Travel',                  items:['trip-plan','somewhere','filmed-here','goa-countdown']},
+    {id:'fashion',  label:'Fashion',                 items:['get-look','occasion','try-on','follow']},
+    {id:'home',     label:'Home & living',           items:['in-this-room','finish-room','side-by-side','colour-wall']},
+    {id:'shopping', label:'Shopping & occasions',    items:['shop-scene','gift-together','big-buy','festive']},
+    {id:'wellness', label:'Wellness',                items:['dinner-week','wind-down']}
+  ];
+
+  let PINNED = ['goa-countdown','dinner-week','get-look','trip-plan','shop-scene'];
+  const isPinned = id => PINNED.indexOf(id) > -1;
+  function addPin(id){ if(isPinned(id)) return; PINNED.push(id); newPinId=id; }
+  function removePin(id){ const i=PINNED.indexOf(id); if(i>-1) PINNED.splice(i,1); }
+
+  /* ---------- hero + bands ------------------------------------------------- */
+  const lockup=$('lockup'), actionsEl=$('heroActions');
+  function heroText(e,t,m){ $('heroEyebrow').textContent=e||''; $('heroTitle').textContent=t||''; $('heroMeta').textContent=m||''; }
+  function heroArt(image){ if(image) TV.setHero({image}); }
+  /* Provenance line — "here's how Glance knows this." Accepts <b> for the
+     word that matters. Always cleared when a screen has nothing to justify. */
+  function setSrc(t){ const el=$('heroSrc');
+    if(t){ el.innerHTML=t; el.classList.add('is-on'); } else { el.innerHTML=''; el.classList.remove('is-on'); } }
+  function bands(v){
+    setSrc(null);
+    if(v==='off'){ lockup.className='hero__lockup is-hidden'; actionsEl.className='hero__actions is-hidden'; actionsEl.innerHTML=''; return; }
+    lockup.className='hero__lockup'+(v==='full'?'':' lk--'+v);
+    actionsEl.className='hero__actions'+(v==='full'?'':' ac--'+v);
+  }
+  function setActions(list){
+    actionsEl.innerHTML='';
+    (list||[]).forEach(a=>{
+      const b=document.createElement('button');
+      b.className='btn'+(a.solid?' btn--solid':'');
+      b.textContent=a.label; b.dataset.focusable='';
+      TV.onSelect(b,()=>{ if(a.unpin){ removePin(a.unpinId); toast('Removed from your menu.'); back(); }
+                          else if(a.on) a.on(); else toast('Prototype stops here.'); });
+      actionsEl.appendChild(b);
+    });
+    return actionsEl.firstChild;
+  }
+  let toastT;
+  function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('is-on');
+    clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('is-on'),2800); }
+
+  /* ---------- the tile ----------------------------------------------------- */
+  function tileEl(u,{showPinned,showState,isNew}={}){
+    const el=document.createElement('div');
+    el.className='tile'+(u.wide?' tile--wide':'')+(isNew?' tile--new':'');
+    el.dataset.focusable=''; el.dataset.use=u.id;
+    el.innerHTML =
+      `<div class="tile__art" style="background-image:url('${u.art}')"></div>
+       <div class="tile__scrim"></div>
+       <div class="tile__glyph">${ICON[u.icon]}</div>
+       ${showPinned && isPinned(u.id) ? '<div class="tile__pinned">Pinned</div>' : ''}
+       ${!showPinned && u.live ? '<div class="tile__live"></div>' : ''}
+       <div class="tile__body"><div class="tile__name">${u.title}</div>
+         ${showState && u.wide && u.state ? `<div class="tile__state">${u.state}</div>` : ''}</div>
+       <div class="kind">${KIND[u.kind]}</div>`;
+    return el;
+  }
+
+  /* ---------- screens ------------------------------------------------------ */
+  const SCREENS=['ambient','detail','picker','agent','catalog'];
+  let screen='ambient', drawerOpen=false, newPinId=null;
+  function showScreen(n){ SCREENS.forEach(s=>$('scr-'+s).classList.toggle('is-active', s===n)); screen=n; }
+  function back(){ if(!TV.popView()) toAmbient(); }
+
+  function clock(){
+    const d=new Date();
+    $('ambTime').textContent=(d.getHours()%12||12)+':'+String(d.getMinutes()).padStart(2,'0');
+    $('ambDate').textContent=d.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'});
+  }
+  function toAmbient(){
+    closeDrawer(); showScreen('ambient'); bands('off'); clock(); heroArt(big(7));
+    TV.focus.clear();   // lean-back: just the breathing arrow, no loud cursor
+  }
+
+  /* ---------- the drawer --------------------------------------------------- */
+  const NAV=[{id:'home',icon:'home',label:'Home'},{id:'ask',icon:'chat',label:'Ask'},
+             {id:'all',icon:'grid',label:'All pins'},{id:'set',icon:'gear',label:'Settings'}];
+  function renderNav(){
+    const row=$('navRow'); row.innerHTML='';
+    NAV.forEach(n=>{
+      const el=document.createElement('div');
+      el.className='nav'; el.dataset.focusable='';
+      el.innerHTML=ICON[n.icon]+'<span>'+n.label+'</span>';
+      TV.onSelect(el,()=>{
+        if(n.id==='home') toAmbient();
+        else if(n.id==='ask'){ closeDrawer(); TV.pushView(()=>openDrawer()); runUse(USES['somewhere'],true); }
+        else if(n.id==='all'){ openAllPins(); }
+        else toast('Settings aren’t in this prototype.');
+      });
+      row.appendChild(el);
+    });
+  }
+  function renderPins(){
+    const col=$('pinCol'); col.innerHTML='';
+    const lab=document.createElement('div'); lab.className='pincol__label'; lab.textContent='Your pins';
+    col.appendChild(lab);
+    PINNED.forEach(id=>{
+      const u=USES[id]; if(!u) return;
+      const el=tileEl(u,{showState:true, isNew:id===newPinId});
+      TV.onSelect(el,()=>{ closeDrawer(); TV.pushView(()=>openDrawer(u.id)); runUse(u); });
+      col.appendChild(el);
+    });
+    newPinId=null;
+    const add=document.createElement('div');
+    add.className='tile tile--add'; add.dataset.focusable='';
+    add.innerHTML=`<div class="tile__glyph">${ICON.plus}</div>
+      <div class="tile__body"><div class="tile__name">All pins</div></div>`;
+    TV.onSelect(add,()=>{ closeDrawer('slide'); TV.pushView(()=>openDrawer()); goCatalog(true); });
+    col.appendChild(add);
+  }
+  function openDrawer(focusId){
+    showScreen('ambient'); bands('off'); clock(); heroArt(big(7));
+    const d=$('drawer'); renderNav(); renderPins();
+    d.classList.add('is-open'); requestAnimationFrame(()=>d.classList.add('is-in'));
+    drawerOpen=true;
+    const t = focusId ? d.querySelector('[data-use="'+focusId+'"]') : null;
+    TV.focus.set(t || d.querySelector('.tile'));
+  }
+  /* pins → keep going left → All Pins. The whole gesture reads as one
+     continuous leftward push, and the drawer's left edge advertises it. */
+  function openAllPins(){ closeDrawer('slide'); TV.pushView(()=>openDrawer()); goCatalog(true); }
+  /* "at the left edge" means nothing sits to the left *in the same row* — the
+     nav row above must not count, or you'd never fall off the left side. */
+  function atDrawerLeftEdge(){
+    const cur=TV.focus.current; if(!cur) return true;
+    const c=cur.getBoundingClientRect(), ccx=(c.left+c.right)/2;
+    for(const el of TV.focus.focusables()){
+      if(el===cur) continue;
+      const r=el.getBoundingClientRect();
+      const vOverlap=Math.min(c.bottom,r.bottom)-Math.max(c.top,r.top);
+      if((r.left+r.right)/2 < ccx-1 && vOverlap > Math.min(c.height,r.height)*0.5) return false;
+    }
+    return true;
+  }
+  function closeDrawer(mode){
+    const d=$('drawer'); if(!drawerOpen) return; drawerOpen=false;
+    d.querySelectorAll('[data-focusable]').forEach(e=>e.setAttribute('data-inert',''));
+    const slide = mode==='slide';
+    if(slide) d.classList.add('is-out');
+    d.classList.remove('is-in');
+    setTimeout(()=>{ d.classList.remove('is-open','is-out');
+      d.querySelectorAll('[data-focusable]').forEach(e=>e.removeAttribute('data-inert')); }, slide?460:260);
+  }
+
+  /* ---------- running a use ------------------------------------------------ */
+  function runUse(u,skipPicker){
+    if(u.kind==='display')                 goDetail(u);
+    else if(u.kind==='input' && !skipPicker) goPicker(u);
+    else                                    goAgent(u);
+  }
+
+  function goDetail(u){
+    const D=u.detail; showScreen('detail'); bands('det');
+    heroText(D.eyebrow,D.title,D.meta); heroArt(big(D.ph!==undefined?D.ph:u.ph));
+    setSrc(D.src);
+    $('detailStripTitle').textContent=D.strip;
+    const rail=$('detailRail'); rail.innerHTML='';
+    (D.cards||[]).forEach(c=>{
+      const el=document.createElement('div'); el.className='icard'; el.dataset.focusable='';
+      el.innerHTML=`<div class="icard__art" style="background-image:url('${u.art}')"></div><div class="icard__veil"></div>
+        <div class="icard__label">${c.label}</div><div class="icard__value">${c.value}</div><div class="icard__sub">${c.sub}</div>`;
+      rail.appendChild(el);
+    });
+    (D.prods||[]).forEach(c=>rail.appendChild(prodCard(c)));
+    TV.focus.set(setActions(D.acts.map(a=>a.unpin?{label:a.label,unpin:true,unpinId:u.id}:a)));
+  }
+  function prodCard(c){
+    const el=document.createElement('div'); el.className='pcard'; el.dataset.focusable='';
+    el.innerHTML=`<div class="pcard__art" style="background-image:url('${c.art}')"></div>
+      ${c.tag?`<div class="pcard__tag">${c.tag}</div>`:''}
+      <div class="pcard__body"><div class="pcard__name">${c.name}</div><div class="pcard__meta">${c.meta}</div></div>`;
+    return el;
+  }
+
+  function goPicker(u){
+    showScreen('picker'); bands('off');
+    $('pickEyebrow').textContent=u.title.toUpperCase(); $('pickTitle').textContent='Three quick things.';
+    $('pickGo').textContent='Go';
+    const wrap=$('pickQs'); wrap.innerHTML='';
+    u.qs.forEach(q=>{
+      const g=document.createElement('div');
+      g.innerHTML=`<div class="q__label">${q.label}</div>`;
+      const row=document.createElement('div'); row.className='q__row';
+      q.opts.forEach((o,oi)=>{
+        const c=document.createElement('div');
+        c.className='chip'+(oi===0?' is-sel':''); c.dataset.focusable=''; c.textContent=o;
+        TV.onSelect(c,()=>{ row.querySelectorAll('.chip').forEach(x=>x.classList.remove('is-sel')); c.classList.add('is-sel'); });
+        row.appendChild(c);
+      });
+      g.appendChild(row); wrap.appendChild(g);
+    });
+    TV.onSelect($('pickGo'),()=>{ TV.pushView(()=>goPicker(u)); goAgent(u); });
+    TV.focus.set(wrap.querySelector('.chip'));
+  }
+
+  /* ---------- the agent (state is the hero) -------------------------------- */
+  let stepT=null, workT=null, offerT=null;
+  function goAgent(u){
+    const R=u.res;
+    clearTimeout(stepT); clearTimeout(workT); clearTimeout(offerT);
+    showScreen('agent'); bands('compact');
+    $('offer').classList.remove('is-on'); $('agentStripTitle').textContent='';
+    const rail=$('agentRail'); rail.innerHTML='';
+    for(let i=0;i<4;i++){ const s=document.createElement('div'); s.className='skel'; rail.appendChild(s); }
+    heroArt(u.big);
+    let i=0; heroText('GLANCE IS WORKING', u.steps[0], '');
+    const tick=()=>{ i++; if(i<u.steps.length){ heroText('GLANCE IS WORKING', u.steps[i], ''); stepT=setTimeout(tick,700); } };
+    stepT=setTimeout(tick,700);
+    TV.focus.set(setActions([{label:'Stop', on:back}]));
+    workT=setTimeout(()=>{
+      heroText(R.eyebrow,R.title,R.meta);
+      // keep the reasoning visible after the answer lands — trust, not magic
+      setSrc(R.src || ('<b>How Glance got here</b> · ' + u.steps.map(s=>s.replace(/[.…]+$/,'')).join(' · ')));
+      $('agentStripTitle').textContent=R.strip;
+      rail.innerHTML=''; R.prods.forEach(c=>rail.appendChild(prodCard(c)));
+      const acts=R.acts.slice();
+      if(!isPinned(u.id) && !u.offer) acts.push({label:'＋ Pin this', on:()=>{ addPin(u.id); toast('Pinned. Press ← any time.'); }});
+      TV.focus.set(setActions(acts));
+      if(u.offer && !isPinned(u.offer.pin.id)) offerT=setTimeout(()=>showOffer(u.offer),1100);
+    }, 2200);
+  }
+  function showOffer(o){
+    $('offerLead').textContent=o.lead; $('offerSub').textContent=o.sub;
+    const el=$('offer'); el.classList.add('is-on');   // enters the focus path, never steals focus
+    TV.onSelect($('offerYes'),()=>{ addPin(o.pin.id); el.classList.remove('is-on');
+      toast('Pinned. Press ← any time.'); TV.focus.set(actionsEl.firstChild); });
+    TV.onSelect($('offerNo'),()=>{ el.classList.remove('is-on'); TV.focus.set(actionsEl.firstChild); });
+  }
+
+  /* ---------- the catalog --------------------------------------------------
+     Enter opens the thing. Pinning is one stable secondary button that never
+     moves or multiplies — you pin what you've already tried. ---------------- */
+  let catUse=null;
+  function goCatalog(slide){
+    showScreen('catalog'); bands('cat');
+    if(slide){ const el=$('scr-catalog'); el.classList.remove('slide-in'); void el.offsetWidth; el.classList.add('slide-in'); }
+    const bar=$('catBar'); bar.querySelectorAll('.tab').forEach(t=>t.remove());
+    const rows=$('catalogRows'); rows.innerHTML=''; rows.style.transform='none';
+
+    // No standing Pin CTA — Enter opens, holding Enter brings the options menu.
+    actionsEl.innerHTML='';
+    const hint=document.createElement('span'); hint.className='acthint';
+    hint.innerHTML='⏎ open&nbsp;&nbsp;·&nbsp;&nbsp;hold ⏎ for options';
+    actionsEl.appendChild(hint);
+
+    CAT.forEach(cat=>{
+      const tab=document.createElement('div');
+      tab.className='tab'; tab.dataset.focusable=''; tab.textContent=cat.label;
+      TV.onSelect(tab,()=>TV.focus.set(document.querySelector('[data-cat="'+cat.id+'"] .tile')));
+      bar.appendChild(tab);
+
+      const row=document.createElement('div'); row.className='shelf crow'; row.dataset.cat=cat.id;
+      row.innerHTML=`<div class="shelf__title">${cat.label}</div>`;
+      const rail=document.createElement('div'); rail.className='rail';
+      cat.items.forEach(id=>{
+        const u=USES[id]; const c=tileEl(u,{showPinned:true});
+        c.addEventListener('tv-focus',()=>{
+          rows.style.transform='translateY(-'+row.offsetTop+'px)';
+          catUse=u;
+          heroText(cat.label.toUpperCase(), u.title, u.what); heroArt(u.big);
+        });
+        TV.onSelect(c,()=>{ TV.pushView(()=>goCatalog()); runUse(u); });   // Enter = open it
+        rail.appendChild(c);
+      });
+      row.appendChild(rail); rows.appendChild(row);
+    });
+
+    heroText('ALL PINS','Everything Glance can hold on to.','Open one to try it. Pin the ones you’d come back to — they show up when you press ← from anywhere.');
+    heroArt(big(8));
+    TV.focus.set(document.querySelector('#catalogRows .tile'));
+  }
+  /* ---------- context menu (hold ⏎ on a pin) -------------------------------
+     Pin/unpin and everything else lives here, so the focus row stays a single
+     stable action and pinning never multiplies buttons (principle 11). ------ */
+  let menuOpen=false, menuReturn=null, lpTimer=null, lpArmed=false, lpFired=false;
+  function mItem(icon,label,sub,fn){
+    const el=document.createElement('div'); el.className='mitem'; el.dataset.focusable='';
+    el.innerHTML=(icon?ICON[icon]:'')+`<span>${label}</span>`+(sub?`<span class="mitem__sub">${sub}</span>`:'');
+    TV.onSelect(el,fn);
+    return el;
+  }
+  function openTileMenu(u,anchor){
+    if(!u||menuOpen) return;
+    menuOpen=true; menuReturn=anchor;
+    const m=$('ctxmenu'); m.innerHTML='';
+    const head=document.createElement('div'); head.className='ctxmenu__head'; head.textContent=u.title;
+    m.appendChild(head);
+    m.appendChild(mItem(u.icon,'Open', KIND[u.kind], ()=>{ closeTileMenu(); TV.pushView(()=>goCatalog()); runUse(u); }));
+    if(isPinned(u.id)){
+      m.appendChild(mItem('home','Move to the front', null, ()=>{ removePin(u.id); PINNED.unshift(u.id); toast('Moved to the front of your menu.'); closeTileMenu(); }));
+      m.appendChild(mItem(null,'Remove from my menu', null, ()=>{ removePin(u.id); syncTiles(u.id); toast('Removed from your menu.'); closeTileMenu(); }));
+    } else {
+      m.appendChild(mItem('plus','Add to my menu', null, ()=>{ addPin(u.id); syncTiles(u.id); toast('Added. Press ← any time.'); closeTileMenu(); }));
+    }
+    m.appendChild(mItem('chat','Why this pin?', null, ()=>{ closeTileMenu(); toast(u.what); }));
+    // position under the tile, in unscaled stage coordinates, clamped to safe area
+    m.style.display='flex';
+    const sr=TV.stage.getBoundingClientRect(), scale=sr.width/1920, tr=anchor.getBoundingClientRect();
+    let x=(tr.left-sr.left)/scale, y=(tr.bottom-sr.top)/scale+14;
+    const mw=m.offsetWidth, mh=m.offsetHeight;
+    if(x+mw>1920-96) x=1920-96-mw;
+    if(y+mh>1080-72) y=(tr.top-sr.top)/scale-mh-14;
+    if(x<96) x=96; if(y<72) y=72;
+    m.style.left=x+'px'; m.style.top=y+'px';
+    m.classList.add('is-open');
+    document.querySelectorAll('[data-focusable]').forEach(e=>{ if(!m.contains(e)) e.setAttribute('data-inert',''); });
+    TV.focus.set(m.querySelector('.mitem'));
+  }
+  function closeTileMenu(){
+    if(!menuOpen) return; menuOpen=false;
+    const m=$('ctxmenu'); m.classList.remove('is-open');
+    setTimeout(()=>{ if(!menuOpen){ m.style.display=''; } },180);
+    document.querySelectorAll('[data-inert]').forEach(e=>e.removeAttribute('data-inert'));
+    if(menuReturn) TV.focus.set(menuReturn);
+  }
+  function syncTiles(id){
+    document.querySelectorAll('#catalogRows [data-use="'+id+'"]').forEach(el=>{
+      const old=el.querySelector('.tile__pinned'); if(old) old.remove();
+      if(isPinned(id)){ const p=document.createElement('div'); p.className='tile__pinned'; p.textContent='Pinned';
+        el.insertBefore(p, el.querySelector('.tile__body')); }
+    });
+  }
+
+  /* ---------- keys the framework doesn't own -------------------------------- */
+  window.addEventListener('keydown', e=>{
+    if(e.key==='t'||e.key==='T'){ document.body.classList.toggle('show-kinds'); e.stopPropagation(); return; }
+
+    // while the options menu is up it owns Esc, and swallows the hold that opened it
+    if(menuOpen){
+      if(e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); TV.sound.back(); closeTileMenu(); return; }
+      if(e.key==='Enter' && lpArmed){ e.preventDefault(); e.stopPropagation(); return; }
+      return;
+    }
+
+    // All Pins: tap ⏎ opens the pin, hold ⏎ (420ms) brings its options
+    if(e.key==='Enter' && screen==='catalog'){
+      const cur=TV.focus.current;
+      if(cur && cur.dataset && cur.dataset.use){
+        e.preventDefault(); e.stopPropagation();
+        if(e.repeat) return;
+        lpArmed=true; lpFired=false;
+        lpTimer=setTimeout(()=>{ lpFired=true; TV.sound.commit(); openTileMenu(USES[cur.dataset.use], cur); }, 420);
+        return;
+      }
+    }
+
+    if(e.key==='Escape'&&drawerOpen){ e.preventDefault(); e.stopPropagation(); TV.sound.back(); toAmbient(); return; }
+    if(e.key!=='ArrowLeft') return;
+    if(!drawerOpen && screen==='ambient'){ e.preventDefault(); e.stopPropagation(); TV.sound.commit(); openDrawer(); return; }
+    // pins → keep pressing left → All Pins (a forward move, not a back-out)
+    if(drawerOpen && atDrawerLeftEdge()){ e.preventDefault(); e.stopPropagation(); TV.sound.commit(); openAllPins(); return; }
+  }, true);
+
+  // release ⏎ in All Pins: if it never became a hold, treat it as a plain open
+  window.addEventListener('keyup', e=>{
+    if(e.key==='Enter' && lpArmed){
+      clearTimeout(lpTimer);
+      if(!lpFired) TV.fireSelect();
+      lpArmed=false; lpFired=false;
+    }
+  });
+
+  setInterval(clock,20000);
+  toAmbient();
+})();
+</script>
+</body>
+</html>
