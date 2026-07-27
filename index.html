@@ -61,8 +61,10 @@ body{font-family:var(--font);color:var(--ink-1);
    OVERSCAN STAGE — fixed 1920×1080, scaled to viewport,
    letterboxed on black. Nothing interactive leaves the safe area.
    ============================================================ */
-#viewport{position:fixed;inset:0;background:#000;display:grid;place-items:center;overflow:hidden}
-#stage{position:relative;width:var(--stage-w);height:var(--stage-h);
+#viewport{position:fixed;inset:0;background:#000;overflow:hidden}
+/* Centered via translate(-50%,-50%) so scaling always pivots on the true
+   centre — the 16:9 stage stays dead-centre at any window size/ratio. */
+#stage{position:absolute;left:50%;top:50%;width:var(--stage-w);height:var(--stage-h);
   transform-origin:center center;background:#000;overflow:hidden}
 
 /* Optional safe-area guide (toggle with the 'g' key) */
@@ -652,7 +654,7 @@ const TV = (() => {
   /* ---------- STAGE SCALING (overscan-safe fit) -------------------------- */
   function fit(){
     const s=Math.min(innerWidth/1920, innerHeight/1080);
-    stage.style.transform=`scale(${s})`;
+    stage.style.transform=`translate(-50%,-50%) scale(${s})`;
   }
   addEventListener('resize',fit); fit();
 
