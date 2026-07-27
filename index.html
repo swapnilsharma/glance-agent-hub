@@ -170,12 +170,12 @@ body{font-family:var(--font);color:var(--ink-1);
 .hero__lockup.lk--compact .hero__title{font-size:46px;-webkit-line-clamp:2}
 .hero__lockup.lk--compact .hero__meta{font-size:21px;margin-top:14px}
 .hero__lockup.lk--det{bottom:376px}
-.hero__lockup.lk--cat{bottom:632px;max-width:800px}
+.hero__lockup.lk--cat{bottom:700px;max-width:800px}
 .hero__lockup.lk--cat .hero__title{font-size:44px;-webkit-line-clamp:2}
 .hero__lockup.lk--cat .hero__meta{font-size:20px;margin-top:12px;-webkit-line-clamp:2}
 .hero__actions.ac--compact{bottom:418px}
 .hero__actions.ac--det{bottom:300px}
-.hero__actions.ac--cat{bottom:556px;align-items:center}
+.hero__actions.ac--cat{bottom:636px;align-items:center}
 .btn--sm{height:52px;padding:0 24px;font-size:19px}
 .btn--ghost{background:transparent}
 .btn{border-radius:var(--radius-sm)}
@@ -246,9 +246,8 @@ body.show-kinds .kind{display:block}
   width:calc(var(--u)*3 + var(--gap)*2);display:flex;flex-direction:column;
   opacity:0;transform:translateX(-26px);transition:opacity 260ms var(--ease),transform 320ms var(--ease-out)}
 #drawer.is-in .panel{opacity:1;transform:none}
-#drawer.is-out .panel{transform:translateX(-720px);opacity:0;
-  transition:transform 440ms var(--ease-out),opacity 340ms var(--ease)}
-#drawer.is-out .drawer__scrim{opacity:0;transition:opacity 380ms var(--ease)}
+#drawer.is-out .panel{opacity:0;transition:opacity 240ms var(--ease)}
+#drawer.is-out .drawer__scrim{opacity:0;transition:opacity 300ms var(--ease)}
 .navrow{display:flex;align-items:center;gap:8px;height:52px;flex:0 0 auto}
 .nav{height:40px;padding:0 15px;border-radius:14px;display:flex;align-items:center;gap:9px;
   font-size:19px;color:var(--ink-2);transition:transform 160ms var(--ease-out),box-shadow 160ms var(--ease-out)}
@@ -262,8 +261,10 @@ body.show-kinds .kind{display:block}
   color:var(--ink-3);margin:0 0 -4px 1px}
 .tile--new{animation:tileIn 520ms var(--ease-out)}
 @keyframes tileIn{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:none}}
+/* All Pins continues the drawer's motion — enters from the left, settles
+   rightward — so a second ← reads as "keep going", not a reversal. */
 .screen.slide-in{animation:slideOver 460ms var(--ease-out)}
-@keyframes slideOver{from{opacity:0;transform:translateX(140px)}to{opacity:1;transform:none}}
+@keyframes slideOver{from{opacity:0;transform:translateX(-150px)}to{opacity:1;transform:none}}
 
 /* ---------- STRIPS (result / info rails) ---------- */
 .strip{position:absolute;left:var(--safe-x);right:0;bottom:44px;z-index:2}
@@ -326,11 +327,34 @@ body.show-kinds .kind{display:block}
   display:flex;align-items:center;gap:20px}
 .pick__hint{font-size:18px;color:var(--ink-3)}
 
-/* ---------- CATALOG ---------- */
-#scr-catalog .shelves{left:calc(var(--safe-x) - 12px);padding:12px 0 0 12px;bottom:0;height:552px;overflow:hidden}
-#catalogRows{transition:transform 420ms var(--ease-out)}
-.crow{margin-bottom:24px}
-.tab{border-radius:12px}
+/* ---------- ALL PINS — fixed-focus carousel --------------------------------
+   Tray index + slot index are explicit state, so ↓ can never skip a row and
+   the active pin is always the leftmost slot. No geometric guessing here. */
+#scr-catalog .shelves{left:var(--safe-x);right:0;top:470px;bottom:0;height:auto;overflow:hidden}
+#catalogRows{position:absolute;left:0;right:0;top:0;transition:transform 520ms var(--ease-out)}
+.ctray{padding:0 0 26px}
+.ctray__title{font-size:16px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-4);
+  margin:0 0 13px 2px;transition:color 320ms var(--ease)}
+.ctray.is-cur .ctray__title{color:var(--ink-1)}
+/* the whole rail scales as a unit → focused tray reads bigger, peek rows tight */
+.crail{display:flex;gap:18px;transform-origin:left center;
+  transition:transform 520ms var(--ease-out),opacity 360ms var(--ease);opacity:.4}
+.ctray.is-cur .crail{opacity:1}
+.ctile{position:relative;flex:0 0 auto;width:222px;height:125px;border-radius:16px;overflow:hidden;
+  background:#0d0d0d;transition:transform 300ms var(--ease-out),box-shadow 300ms var(--ease-out)}
+.ctile.is-active{transform-origin:left center;transform:translateY(-8px) scale(1.06);z-index:5;
+  box-shadow:var(--focus-ring),var(--focus-lift)}
+.ctile__art{position:absolute;inset:0;background-size:cover;background-position:center}
+.ctile__scrim{position:absolute;inset:0;
+  background:linear-gradient(0deg,rgba(0,0,0,.92) 0%,rgba(0,0,0,.34) 58%,rgba(0,0,0,.06) 100%)}
+.ctile__glyph{position:absolute;top:12px;left:14px;color:var(--ink-1)}
+.ctile__glyph svg{width:20px;height:20px;display:block}
+.ctile__name{position:absolute;left:14px;right:12px;bottom:11px;font-size:16px;font-weight:600;color:var(--ink-0);
+  text-shadow:0 2px 12px rgba(0,0,0,.85);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.ctile__pin{position:absolute;top:10px;right:10px;height:20px;padding:0 8px;border-radius:6px;
+  background:rgba(255,255,255,.94);color:#000;font-size:10px;letter-spacing:.09em;font-weight:700;
+  text-transform:uppercase;display:flex;align-items:center}
 
 /* ---------- TOAST ---------- */
 .toast{position:absolute;right:var(--safe-x);top:var(--safe-y);z-index:60;
@@ -1173,45 +1197,72 @@ const TV = (() => {
   /* ---------- the catalog --------------------------------------------------
      Enter opens the thing. Pinning is one stable secondary button that never
      moves or multiplies — you pin what you've already tried. ---------------- */
-  let catUse=null;
-  function goCatalog(slide){
-    showScreen('catalog'); bands('cat');
-    if(slide){ const el=$('scr-catalog'); el.classList.remove('slide-in'); void el.offsetWidth; el.classList.add('slide-in'); }
-    const bar=$('catBar'); bar.querySelectorAll('.tab').forEach(t=>t.remove());
-    const rows=$('catalogRows'); rows.innerHTML=''; rows.style.transform='none';
+  /* Explicit state: which tray is focused, and the active slot per tray. The
+     active pin is always the leftmost slot; ←/→ conveyor tiles through it. */
+  let catTray=0, catPos=[], catStride=0;
+  const catActiveUse = () => { const c=CAT[catTray]; return c ? USES[c.items[catPos[catTray]||0]] : null; };
+  const catActiveEl  = () => { const tray=$('catalogRows').children[catTray];
+    return tray ? tray.querySelector('.crail').children[catPos[catTray]||0] : null; };
 
-    // No standing Pin CTA — Enter opens, holding Enter brings the options menu.
+  function goCatalog(slide){
+    showScreen('catalog'); bands('cat'); TV.focus.clear();
+    if(slide){ const el=$('scr-catalog'); el.classList.remove('slide-in'); void el.offsetWidth; el.classList.add('slide-in'); }
+    $('catBar').querySelectorAll('.tab').forEach(t=>t.remove());   // ↕ trays replace tabs
+
     actionsEl.innerHTML='';
     const hint=document.createElement('span'); hint.className='acthint';
-    hint.innerHTML='⏎ open&nbsp;&nbsp;·&nbsp;&nbsp;hold ⏎ for options';
+    hint.innerHTML='↕ trays&nbsp;&nbsp;·&nbsp;&nbsp;↔ browse&nbsp;&nbsp;·&nbsp;&nbsp;⏎ open&nbsp;&nbsp;·&nbsp;&nbsp;hold ⏎ for options';
     actionsEl.appendChild(hint);
 
+    const rows=$('catalogRows'); rows.innerHTML='';
+    if(catPos.length!==CAT.length) catPos=CAT.map(()=>0);
     CAT.forEach(cat=>{
-      const tab=document.createElement('div');
-      tab.className='tab'; tab.dataset.focusable=''; tab.textContent=cat.label;
-      TV.onSelect(tab,()=>TV.focus.set(document.querySelector('[data-cat="'+cat.id+'"] .tile')));
-      bar.appendChild(tab);
-
-      const row=document.createElement('div'); row.className='shelf crow'; row.dataset.cat=cat.id;
-      row.innerHTML=`<div class="shelf__title">${cat.label}</div>`;
-      const rail=document.createElement('div'); rail.className='rail';
+      const tray=document.createElement('div'); tray.className='ctray';
+      tray.innerHTML=`<div class="ctray__title">${cat.label}</div>`;
+      const rail=document.createElement('div'); rail.className='crail';
       cat.items.forEach(id=>{
-        const u=USES[id]; const c=tileEl(u,{showPinned:true});
-        c.addEventListener('tv-focus',()=>{
-          rows.style.transform='translateY(-'+row.offsetTop+'px)';
-          catUse=u;
-          heroText(cat.label.toUpperCase(), u.title, u.what); heroArt(u.big);
-        });
-        TV.onSelect(c,()=>{ TV.pushView(()=>goCatalog()); runUse(u); });   // Enter = open it
-        rail.appendChild(c);
+        const u=USES[id];
+        const t=document.createElement('div'); t.className='ctile'; t.dataset.use=id;
+        t.innerHTML=`<div class="ctile__art" style="background-image:url('${u.art}')"></div>
+          <div class="ctile__scrim"></div>
+          <div class="ctile__glyph">${ICON[u.icon]}</div>
+          ${isPinned(id)?'<div class="ctile__pin">Pinned</div>':''}
+          <div class="ctile__name">${u.title}</div>`;
+        rail.appendChild(t);
       });
-      row.appendChild(rail); rows.appendChild(row);
+      tray.appendChild(rail); rows.appendChild(tray);
     });
-
-    heroText('ALL PINS','Everything Glance can hold on to.','Open one to try it. Pin the ones you’d come back to — they show up when you press ← from anywhere.');
-    heroArt(big(8));
-    TV.focus.set(document.querySelector('#catalogRows .tile'));
+    // trays are uniform height → one measured stride drives the vertical scroll
+    const a=rows.children[0], b=rows.children[1];
+    catStride = b ? (b.offsetTop - a.offsetTop) : (a?a.offsetHeight:180);
+    catRender();
   }
+
+  function catRender(){
+    const rows=$('catalogRows'), N=CAT.length;
+    catTray=Math.max(0,Math.min(N-1,catTray));
+    [...rows.children].forEach((tray,ci)=>{
+      const focused=ci===catTray;
+      tray.classList.toggle('is-cur',focused);
+      const rail=tray.querySelector('.crail'), p=catPos[ci]||0;
+      rail.style.transform = focused ? `translateX(${30-(p*240)}px)` : 'scale(.8)';
+      [...rail.children].forEach((tile,ti)=>tile.classList.toggle('is-active', focused && ti===p));
+    });
+    rows.style.transform=`translateY(${110 - catTray*catStride}px)`;   // focused tray → fixed anchor
+    const u=catActiveUse(), cat=CAT[catTray];
+    if(u){ heroText(cat.label.toUpperCase(), u.title, u.what); heroArt(u.big); }
+  }
+
+  function catNav(key){
+    const N=CAT.length, len=CAT[catTray].items.length, p=catPos[catTray]||0;
+    let moved=true;
+    if(key==='ArrowDown')       moved = catTray<N-1 && !!(catTray++ ,1);
+    else if(key==='ArrowUp')    moved = catTray>0   && !!(catTray-- ,1);
+    else if(key==='ArrowRight'){ if(p<len-1) catPos[catTray]=p+1; else moved=false; }
+    else if(key==='ArrowLeft'){  if(p>0)     catPos[catTray]=p-1; else moved=false; }
+    if(moved){ TV.sound.move(); catRender(); } else TV.sound.blocked();
+  }
+  function catOpenActive(){ const u=catActiveUse(); if(u){ TV.pushView(()=>goCatalog()); runUse(u); } }
   /* ---------- context menu (hold ⏎ on a pin) -------------------------------
      Pin/unpin and everything else lives here, so the focus row stays a single
      stable action and pinning never multiplies buttons (principle 11). ------ */
@@ -1254,13 +1305,16 @@ const TV = (() => {
     const m=$('ctxmenu'); m.classList.remove('is-open');
     setTimeout(()=>{ if(!menuOpen){ m.style.display=''; } },180);
     document.querySelectorAll('[data-inert]').forEach(e=>e.removeAttribute('data-inert'));
-    if(menuReturn) TV.focus.set(menuReturn);
+    // the carousel's active tile isn't a TV focusable — its ring is index-driven,
+    // so just drop the menu's focus rather than trying to restore it there
+    if(menuReturn && menuReturn.hasAttribute('data-focusable')) TV.focus.set(menuReturn);
+    else TV.focus.clear();
   }
   function syncTiles(id){
-    document.querySelectorAll('#catalogRows [data-use="'+id+'"]').forEach(el=>{
-      const old=el.querySelector('.tile__pinned'); if(old) old.remove();
-      if(isPinned(id)){ const p=document.createElement('div'); p.className='tile__pinned'; p.textContent='Pinned';
-        el.insertBefore(p, el.querySelector('.tile__body')); }
+    document.querySelectorAll('#catalogRows .ctile[data-use="'+id+'"]').forEach(el=>{
+      const old=el.querySelector('.ctile__pin'); if(old) old.remove();
+      if(isPinned(id)){ const p=document.createElement('div'); p.className='ctile__pin'; p.textContent='Pinned';
+        el.appendChild(p); }
     });
   }
 
@@ -1275,14 +1329,19 @@ const TV = (() => {
       return;
     }
 
-    // All Pins: tap ⏎ opens the pin, hold ⏎ (420ms) brings its options
-    if(e.key==='Enter' && screen==='catalog'){
-      const cur=TV.focus.current;
-      if(cur && cur.dataset && cur.dataset.use){
-        e.preventDefault(); e.stopPropagation();
-        if(e.repeat) return;
-        lpArmed=true; lpFired=false;
-        lpTimer=setTimeout(()=>{ lpFired=true; TV.sound.commit(); openTileMenu(USES[cur.dataset.use], cur); }, 420);
+    // All Pins carousel owns its arrows (deterministic — never skips a tray).
+    // Tap ⏎ opens the active pin; hold ⏎ (420ms) brings its options.
+    if(screen==='catalog'){
+      if(e.key==='ArrowUp'||e.key==='ArrowDown'||e.key==='ArrowLeft'||e.key==='ArrowRight'){
+        e.preventDefault(); e.stopPropagation(); catNav(e.key); return;
+      }
+      if(e.key==='Enter'){
+        const el=catActiveEl();
+        if(el){ e.preventDefault(); e.stopPropagation();
+          if(e.repeat) return;
+          lpArmed=true; lpFired=false;
+          lpTimer=setTimeout(()=>{ lpFired=true; TV.sound.commit(); openTileMenu(catActiveUse(), el); }, 420);
+        }
         return;
       }
     }
@@ -1298,7 +1357,7 @@ const TV = (() => {
   window.addEventListener('keyup', e=>{
     if(e.key==='Enter' && lpArmed){
       clearTimeout(lpTimer);
-      if(!lpFired) TV.fireSelect();
+      if(!lpFired) catOpenActive();   // short press = open the active pin
       lpArmed=false; lpFired=false;
     }
   });
